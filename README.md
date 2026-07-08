@@ -11,8 +11,10 @@ vigentes.
 A partir dos dados da UM (classe e posição do helideque, aproamento,
 orientação do "H", SLO) e do vento:
 
-- sugere a **proa de aproximação final** (defasagem máxima de 45° do "H",
-  vento de través dentro do limite da aeronave) ou valida uma proa manual;
+- sugere a **proa de aproximação final** — preferencialmente dentro do
+  prolongamento dos limites laterais do SLO; defasagem além dos limites
+  (máx. 45° do "H") somente quando o través exigir, sempre inferior ao
+  limite da aeronave — ou valida uma proa manual;
 - calcula componentes de **vento de proa e través** na final;
 - aplica a **reclassificação da classe do helideque** com vento de alheta/popa;
 - monta o **circuito de tráfego** (lado das curvas pelo lado do PF, proas das
