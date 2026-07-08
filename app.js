@@ -22,6 +22,25 @@
     return Number.isFinite(n) ? n : null;
   };
 
+  /* ---------- constantes de regra (SLO MODULE SPEC §9 — SOP 52 Rev. 00 + NORMAM-223 Rev. 2025) ---------- */
+  const SPEC = {
+    slo: { sectorDeg: 210, coupledSectorDeg: 180, externalLimitM: 500,
+           chevronVariationDeg: 15, soalSectorDeg: 150 },
+    finalHeading: { maxFromHDeg: 45 },
+    /* limites de movimento da UM — helicóptero categoria B (NORMAM-223 Tabela 1);
+       módulo diurno usa .day; .night mantido para referência (Classe 3 noturno proibido) */
+    deckLimitsCatB: {
+      '1': { day: { rollPitchDeg: 4, incDeg: 4.5, heaveRateMs: 1.3, heaveM: 5.0 },
+             night: { rollPitchDeg: 4, incDeg: 4.5, heaveRateMs: 1.0, heaveM: 4.0 } },
+      '2': { day: { rollPitchDeg: 3, incDeg: 3.5, heaveRateMs: 1.0, heaveM: 3.0 },
+             night: { rollPitchDeg: 2, incDeg: 2.5, heaveRateMs: 0.5, heaveM: 1.5 } },
+      '3': { day: { rollPitchDeg: 3, incDeg: 3.5, heaveRateMs: 1.0, heaveM: 3.0 },
+             night: null }
+    },
+    /* classe fixa pela posição do helideque (NORMAM-223 cap. 9) */
+    classByDeckPos: { 'meia-nau': '2', 'proa': '3', 'deslocado': '3' }
+  };
+
   /* componentes de vento sobre uma proa: head + = vento de proa; cross + = pela direita */
   function windComp(windFrom, windKt, heading){
     const d = angDiff(windFrom, heading);
@@ -35,7 +54,8 @@
   /* ---------- leitura do formulário ---------- */
   const $ = id => document.getElementById(id);
   const FIELDS = ['umIcao','deckClass','deckPos','shipHeading','hOrientation','sloAngle',
-                  'sloBisector','finalManual','windFrom','windKt','xwindLimit','pfSide','gaSide'];
+                  'sloBisector','finalManual','windFrom','windKt','xwindLimit','pfSide','gaSide',
+                  'deckRoll','deckInc','deckHeaveRate','deckHeave'];
 
   function readState(){
     const H = num($('hOrientation').value);
@@ -53,7 +73,11 @@
       windKt: num($('windKt').value) ?? 0,
       xwindLimit: num($('xwindLimit').value) ?? 35,
       pfSide: $('pfSide').value,
-      gaSide: $('gaSide').value
+      gaSide: $('gaSide').value,
+      deckRoll: num($('deckRoll').value),
+      deckInc: num($('deckInc').value),
+      deckHeaveRate: num($('deckHeaveRate').value),
+      deckHeave: num($('deckHeave').value)
     };
   }
 
@@ -78,9 +102,10 @@
     if (st.windFrom == null || !st.windKt){
       return { hdg: norm(st.H), dev: 0, head: 0, cross: 0, calm: true, inSlo: true };
     }
+    const maxDev = SPEC.finalHeading.maxFromHDeg;
     const pick = insideOnly => {
       let best = null;
-      for (let dev = -45; dev <= 45; dev++){
+      for (let dev = -maxDev; dev <= maxDev; dev++){
         const h = norm(st.H + dev);
         const inSlo = inSloSector(h, st);
         if (insideOnly && !inSlo) continue;
@@ -193,9 +218,34 @@
     if (cls.changed)
       alerts.push({ t: 'info', m: `Vento de ${cls.sec}: helideque reclassificado de Classe ${st.deckClass} para Classe ${cls.cls}.` });
 
+    // classe fixa pela posição do helideque (NORMAM-223 cap. 9)
+    const posCls = SPEC.classByDeckPos[st.deckPos];
+    if (posCls && st.deckClass !== posCls){
+      const posLabel = { 'proa': 'na proa/superestrutura', 'meia-nau': 'a meia-nau',
+                         'deslocado': 'adaptado (hatch cover / lateral do convés)' }[st.deckPos];
+      alerts.push({ t: 'warn', m: `Helideque ${posLabel} é sempre Classe ${posCls} (NORMAM-223) — declarado Classe ${st.deckClass}. Conferir no Flight Preview.` });
+    }
+
+    // variação do chevron limitada a ±15° (NORMAM-223 art. 4.2)
+    if (st.H != null && st.sloBisector != null){
+      const bisDev = Math.abs(angDiff(st.sloBisector, st.H));
+      if (bisDev > SPEC.slo.chevronVariationDeg)
+        alerts.push({ t: 'warn', m: `Bissetriz do SLO defasada ${Math.round(bisDev)}° do “H” — a variação do chevron é limitada a ±15° (NORMAM-223). Conferir dados.` });
+    }
+
+    // movimento do helideque × limites diurnos da classe efetiva (NORMAM-223 Tabela 1, cat. B)
+    const lim = SPEC.deckLimitsCatB[cls.cls].day;
+    [['Balanço/caturro', st.deckRoll, lim.rollPitchDeg, '°'],
+     ['Inclinação', st.deckInc, lim.incDeg, '°'],
+     ['Razão de arfagem', st.deckHeaveRate, lim.heaveRateMs, ' m/s'],
+     ['Arfagem', st.deckHeave, lim.heaveM, ' m']].forEach(([name, v, max, unit]) => {
+      if (v != null && v > max)
+        alerts.push({ t: 'bad', m: `${name} de ${String(v).replace('.', ',')}${unit} acima do limite diurno de ${String(max).replace('.', ',')}${unit} para Classe ${cls.cls} (NORMAM-223 Tab. 1, cat. B).` });
+    });
+
     const hasBad = alerts.some(a => a.t === 'bad');
-    if (!ready){ status = 'warn'; statusText = 'Aguardando briefing'; }
-    else if (hasBad){ status = 'bad'; statusText = 'Fora de limites'; }
+    if (hasBad){ status = 'bad'; statusText = 'Fora de limites'; }
+    else if (!ready){ status = 'warn'; statusText = 'Aguardando briefing'; }
     else if (alerts.some(a => a.t === 'warn')){ status = 'warn'; statusText = 'Briefing com ressalvas'; }
     else { status = 'ok'; statusText = 'Briefing OK'; }
 
@@ -230,9 +280,10 @@
     }
 
     el.resClass.textContent = `Classe ${cls.cls}`;
-    el.resClassSub.textContent = cls.changed
+    el.resClassSub.textContent = (cls.changed
       ? `Reclassificado (era Classe ${st.deckClass}) — vento de ${cls.sec}.`
-      : (cls.sec ? `Vento de ${cls.sec} — sem reclassificação.` : 'Sem dados de vento/aproamento.');
+      : (cls.sec ? `Vento de ${cls.sec} — sem reclassificação.` : 'Sem dados de vento/aproamento.')) +
+      (cls.cls === '3' ? ' Noturno proibido em Classe 3 (AJB).' : '');
 
     if (circuit){
       el.resCircuit.textContent = circuit.side === 'esq' ? 'Curvas à esquerda' : 'Curvas à direita';
@@ -370,6 +421,24 @@
     ctx.font = '700 10px Inter, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('SLO ' + st.sloAngle + '°', X(P.D) + bv.e * (sloR + 16), Y(P.D) - bv.n * (sloR + 16));
+
+    // SOAL — setor de obstáculos limitados, oposto ao SLO: sobrevoo proibido (NORMAM-223 art. 4.4)
+    const soalHalf = (360 - st.sloAngle) / 2;
+    const soalC = norm(bis); // lado dos obstáculos da UM
+    const soalR = 0.5 * scale;
+    const s0 = rad(norm(soalC - soalHalf) - 90), s1 = rad(norm(soalC + soalHalf) - 90);
+    ctx.beginPath();
+    ctx.moveTo(X(P.D), Y(P.D));
+    ctx.arc(X(P.D), Y(P.D), soalR, s0, s1, false);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,107,107,.10)';
+    ctx.strokeStyle = 'rgba(255,107,107,.4)';
+    ctx.fill(); ctx.stroke();
+    const sv2 = vec(soalC);
+    ctx.fillStyle = 'rgba(255,107,107,.85)';
+    ctx.font = '700 10px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('SOAL — não sobrevoar', X(P.D) + sv2.e * (soalR + 18), Y(P.D) - sv2.n * (soalR + 18));
 
     // navio (fora de escala)
     if (st.shipHeading != null){
