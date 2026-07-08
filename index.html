@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SLO">
+<title>AW139 Companion — Circuito Offshore (SLO)</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/icon-180.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main class="cockpit-shell">
+  <header class="topbar slim-topbar">
+    <div class="topbar-left">
+      <a id="backBtn" class="nav-btn" href="#" hidden aria-label="Voltar">⥢</a>
+      <div class="product-tag">
+        <div class="product-icon"><img src="assets/icon-192.png" alt=""></div>
+        <div>
+          <div class="product-line">AW139 Companion</div>
+          <div class="product-sub">Circuito Offshore · SLO</div>
+        </div>
+      </div>
+    </div>
+    <div class="topbar-right"></div>
+  </header>
+
+  <section class="workspace">
+    <aside class="sidebar">
+      <section class="panel entry-panel">
+        <div class="panel-title-row">
+          <div>
+            <div class="panel-kicker">Planejamento</div>
+            <h1>Circuito Offshore Diurno</h1>
+          </div>
+        </div>
+        <form onsubmit="return false">
+          <div class="section-label">Unidade Marítima</div>
+          <div class="form-grid form-grid-2">
+            <label class="field"><span>Nome / código ICAO</span>
+              <input id="umIcao" type="text" autocapitalize="characters" placeholder="Ex.: 9PBR" maxlength="12">
+            </label>
+            <label class="field"><span>Classe do helideque</span>
+              <select id="deckClass">
+                <option value="1">Classe 1</option>
+                <option value="2">Classe 2</option>
+                <option value="3">Classe 3</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-grid form-grid-2">
+            <label class="field"><span>Posição do helideque</span>
+              <select id="deckPos">
+                <option value="proa">Proa</option>
+                <option value="popa" selected>Popa</option>
+                <option value="meia-nau">Meia-nau</option>
+                <option value="deslocado">Deslocado</option>
+              </select>
+            </label>
+            <label class="field"><span>Aproamento da UM (°)</span>
+              <input id="shipHeading" type="number" inputmode="numeric" enterkeyhint="next" min="0" max="360" placeholder="000">
+            </label>
+          </div>
+          <div class="form-grid form-grid-2">
+            <label class="field"><span>Orientação do “H” (°)</span>
+              <input id="hOrientation" type="number" inputmode="numeric" enterkeyhint="next" min="0" max="360" placeholder="proa de aproximação">
+            </label>
+            <label class="field"><span>Setor Livre (SLO)</span>
+              <select id="sloAngle">
+                <option value="210" selected>210° (padrão)</option>
+                <option value="180">180° (UM acoplada)</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-grid form-grid-2">
+            <label class="field"><span>Bissetriz do SLO (°)</span>
+              <input id="sloBisector" type="number" inputmode="numeric" enterkeyhint="next" min="0" max="360" placeholder="= orientação do H">
+            </label>
+            <label class="field"><span>Proa final manual (°)</span>
+              <input id="finalManual" type="number" inputmode="numeric" enterkeyhint="next" min="0" max="360" placeholder="opcional">
+            </label>
+          </div>
+
+          <div class="section-label">Vento e limites</div>
+          <div class="form-grid form-grid-3">
+            <label class="field"><span>Vento — direção (°)</span>
+              <input id="windFrom" type="number" inputmode="numeric" enterkeyhint="next" min="0" max="360" placeholder="000">
+            </label>
+            <label class="field"><span>Vento — intensidade (kt)</span>
+              <input id="windKt" type="number" inputmode="numeric" enterkeyhint="next" min="0" max="99" placeholder="0">
+            </label>
+            <label class="field"><span>Limite de través (kt)</span>
+              <input id="xwindLimit" type="number" inputmode="numeric" enterkeyhint="done" min="1" max="60" value="35">
+            </label>
+          </div>
+
+          <div class="section-label">Tripulação</div>
+          <div class="form-grid form-grid-2">
+            <label class="field"><span>Lado do PF</span>
+              <select id="pfSide">
+                <option value="dir" selected>Direito</option>
+                <option value="esq">Esquerdo</option>
+              </select>
+            </label>
+            <label class="field"><span>Arremetida — lado da curva</span>
+              <select id="gaSide">
+                <option value="auto" selected>Automático (lado do circuito)</option>
+                <option value="esq">Esquerda</option>
+                <option value="dir">Direita</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="action-row">
+            <button id="runBtn" class="run-btn" type="button">Montar briefing</button>
+            <button id="pdfBtn" class="ghost-btn" type="button">Compartilhar PDF</button>
+            <button id="resetBtn" class="ghost-btn" type="button">Reset</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel result-panel pending" id="resultPanel">
+        <div class="panel-title-row compact">
+          <div>
+            <div class="panel-kicker">Resultado</div>
+            <h2>Briefing do Circuito</h2>
+          </div>
+          <span id="statusChip" class="status-chip warn">Aguardando briefing</span>
+        </div>
+
+        <div id="alerts" class="alerts"></div>
+
+        <div class="result-grid">
+          <div class="result-box">
+            <div class="result-label">Proa de aproximação final</div>
+            <div class="result-value" id="resFinal">—</div>
+            <div class="result-sub" id="resFinalSub">Sem cálculo ainda.</div>
+          </div>
+          <div class="result-box">
+            <div class="result-label">Vento na final</div>
+            <div class="result-value" id="resWind">—</div>
+            <div class="result-sub" id="resWindSub">Proa / través.</div>
+          </div>
+          <div class="result-box">
+            <div class="result-label">Classe efetiva</div>
+            <div class="result-value" id="resClass">—</div>
+            <div class="result-sub" id="resClassSub">Reclassificação pelo vento.</div>
+          </div>
+          <div class="result-box">
+            <div class="result-label">Circuito</div>
+            <div class="result-value" id="resCircuit">—</div>
+            <div class="result-sub" id="resCircuitSub">Lado das curvas · PF.</div>
+          </div>
+        </div>
+
+        <div class="legs-block">
+          <div class="mini-title">Pernas do circuito — 500 ft RADALT · 80 KIAS</div>
+          <table class="legs-table" aria-label="Pernas do circuito">
+            <thead><tr><th>Perna</th><th>Proa</th><th>GS est.</th><th>Referência</th></tr></thead>
+            <tbody id="legsBody">
+              <tr><td colspan="4" class="dim">Preencha os dados para montar o circuito.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="brief-cards">
+          <details class="brief-card" open>
+            <summary>Arremetida</summary>
+            <div id="gaText" class="brief-body">—</div>
+            <ul class="brief-list">
+              <li>Aproximação fora dos critérios de estabilização</li>
+              <li>Status Light acesa</li>
+              <li>Trajetória fora do SLO antes do LDP</li>
+              <li>Obstáculo ou condição insegura na trajetória</li>
+              <li>Dúvida na reidentificação do código ICAO</li>
+            </ul>
+            <div class="brief-note">Reiterar o lado da arremetida na perna do vento.</div>
+          </details>
+
+          <details class="brief-card">
+            <summary>Aproximação estabilizada — referência</summary>
+            <ul class="brief-list">
+              <li>Início da final: 500 ft RADALT · 80 KIAS · redução gradual p/ 60 kt GS</li>
+              <li>Estabilizada obrigatória antes de 0,5 NM</li>
+              <li>Velocidade final VFR: 75–85 kt</li>
+              <li>Razão de descida: &lt;700 ft/min acima de 500 ft · ≤500 ft/min abaixo · ≤350 ft/min no segmento final</li>
+              <li>Correções de rumo: até 5°</li>
+              <li>Após o LDP: trajetória integral dentro do SLO, cauda livre</li>
+            </ul>
+          </details>
+
+          <details class="brief-card">
+            <summary>Comunicações e checklists</summary>
+            <ul class="brief-list">
+              <li>30 min do ETA: chamada inicial · conferir coordenadas da UM no FMS</li>
+              <li>5 min do ETA: vento e proa da UM atualizados → revisar este briefing</li>
+              <li>5 NM: Before Landing Checklist completo · sobrevoo a 80 KIAS</li>
+              <li>Vertical: leitura do código ICAO (PF) + cotejamento (PM)</li>
+              <li>Final: Final Approach Checklist · trem checado · green deck · reconfirmar ICAO</li>
+            </ul>
+          </details>
+        </div>
+      </section>
+    </aside>
+
+    <section class="viewer-pane">
+      <div class="viewer-header">
+        <div>
+          <div class="panel-kicker">Visualização</div>
+          <div class="viewer-title">Circuito · SLO · Vento</div>
+        </div>
+        <button id="fsOpen" class="ghost-btn mini" type="button">Tela cheia</button>
+      </div>
+      <div class="viewer-stage">
+        <canvas id="vizCanvas" class="viz-canvas"></canvas>
+      </div>
+    </section>
+  </section>
+
+  <footer class="app-footer">Ferramenta pessoal de estudo e briefing — consulte SOP, MGO e RFM vigentes. Não substitui documentos operacionais.</footer>
+</main>
+
+<div id="fsOverlay" class="chart-fullscreen-overlay" hidden>
+  <div class="chart-fullscreen-top">
+    <button id="fsClose" class="chart-fullscreen-close" type="button" aria-label="Fechar">✕</button>
+  </div>
+  <canvas id="fsCanvas" class="chart-fullscreen-canvas"></canvas>
+</div>
+
+<div id="printArea" class="print-area" aria-hidden="true"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
