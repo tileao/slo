@@ -59,23 +59,40 @@
 
   /* ---------- lógica operacional ---------- */
 
-  /* proa final sugerida: alinhada ao "H", defasagem máx. 45°, través dentro do limite,
-     privilegiando componente de vento de proa */
+  /* meia-abertura do prolongamento dos limites laterais do SLO em relação à
+     proa de aproximação pela bissetriz: 15° no SLO 210°, 0° no SLO 180° */
+  const sloHalfWindow = st => Math.max(0, st.sloAngle / 2 - 90);
+
+  /* proa dentro do prolongamento dos limites laterais do SLO? */
+  function inSloSector(hdg, st){
+    const bis = st.sloBisector != null ? st.sloBisector : norm(st.H);
+    return Math.abs(angDiff(hdg, bis)) <= sloHalfWindow(st);
+  }
+
+  /* proa final sugerida (SOP 52 §5.4): preferencialmente dentro do prolongamento
+     dos limites laterais do SLO; defasagem além dos limites (máx. 45° do "H")
+     admitida somente quando o través impedir a final dentro do prolongamento.
+     Através deve ser inferior ao limite; privilegia componente de vento de proa. */
   function suggestFinal(st){
     if (st.H == null) return null;
     if (st.windFrom == null || !st.windKt){
-      return { hdg: norm(st.H), dev: 0, head: 0, cross: 0, calm: true };
+      return { hdg: norm(st.H), dev: 0, head: 0, cross: 0, calm: true, inSlo: true };
     }
-    let best = null;
-    for (let dev = -45; dev <= 45; dev++){
-      const h = norm(st.H + dev);
-      const c = windComp(st.windFrom, st.windKt, h);
-      if (Math.abs(c.cross) > st.xwindLimit) continue;
-      // favorece vento de proa; pequena penalidade por defasagem do H
-      const score = c.head - 0.2 * Math.abs(dev);
-      if (!best || score > best.score) best = { hdg: h, dev, head: c.head, cross: c.cross, score };
-    }
-    return best; // null => inviável dentro dos limites
+    const pick = insideOnly => {
+      let best = null;
+      for (let dev = -45; dev <= 45; dev++){
+        const h = norm(st.H + dev);
+        const inSlo = inSloSector(h, st);
+        if (insideOnly && !inSlo) continue;
+        const c = windComp(st.windFrom, st.windKt, h);
+        if (Math.abs(c.cross) >= st.xwindLimit) continue;
+        // favorece vento de proa; pequena penalidade por defasagem do H
+        const score = c.head - 0.2 * Math.abs(dev);
+        if (!best || score > best.score) best = { hdg: h, dev, head: c.head, cross: c.cross, score, inSlo };
+      }
+      return best;
+    };
+    return pick(true) || pick(false); // null => inviável dentro dos limites
   }
 
   /* setor do vento em relação ao aproamento da UM (nomenclatura náutica) */
@@ -148,15 +165,17 @@
         const dev = angDiff(h, st.H);
         const c = (st.windFrom != null && st.windKt)
           ? windComp(st.windFrom, st.windKt, h) : { head: 0, cross: 0 };
-        final = { hdg: h, dev, head: c.head, cross: c.cross, manual: true };
+        final = { hdg: h, dev, head: c.head, cross: c.cross, manual: true, inSlo: inSloSector(h, st) };
         if (Math.abs(dev) > 45)
           alerts.push({ t: 'bad', m: `Proa manual com defasagem de ${Math.abs(Math.round(dev))}° do “H” — acima de 45°. Fora dos limites: descontinuar / novo circuito.` });
-        if (Math.abs(c.cross) > st.xwindLimit)
-          alerts.push({ t: 'bad', m: `Través de ${Math.abs(c.cross).toFixed(0)} kt acima do limite de ${st.xwindLimit} kt na proa manual.` });
+        else if (!final.inSlo)
+          alerts.push({ t: 'warn', m: `Proa manual fora do prolongamento dos limites do SLO (defasagem de ${Math.abs(Math.round(dev))}° do “H”) — admissível até 45° somente quando o través impedir a final dentro do SLO.` });
+        if (Math.abs(c.cross) >= st.xwindLimit)
+          alerts.push({ t: 'bad', m: `Través de ${Math.abs(c.cross).toFixed(0)} kt — não inferior ao limite de ${st.xwindLimit} kt na proa manual.` });
       } else {
         final = suggestFinal(st);
         if (!final)
-          alerts.push({ t: 'bad', m: `Nenhuma proa com defasagem ≤ 45° do “H” mantém o través dentro de ${st.xwindLimit} kt. Aproximação inviável — reavaliar.` });
+          alerts.push({ t: 'bad', m: `Nenhuma proa com defasagem ≤ 45° do “H” mantém o través inferior a ${st.xwindLimit} kt. Aproximação inviável — reavaliar.` });
       }
     }
 
@@ -164,9 +183,11 @@
       circuit = buildCircuit(final.hdg, st);
       if (final.head < -1)
         alerts.push({ t: 'warn', m: `Componente de vento de cauda na final (${Math.abs(final.head).toFixed(0)} kt). Reavaliar proa/perfil.` });
-      if (Math.abs(final.cross) > 0.8 * st.xwindLimit && Math.abs(final.cross) <= st.xwindLimit)
+      if (Math.abs(final.cross) > 0.8 * st.xwindLimit && Math.abs(final.cross) < st.xwindLimit)
         alerts.push({ t: 'warn', m: `Través de ${Math.abs(final.cross).toFixed(0)} kt — próximo do limite de ${st.xwindLimit} kt.` });
-      if (Math.abs(final.dev) > 0 && !final.manual)
+      if (!final.manual && !final.inSlo)
+        alerts.push({ t: 'warn', m: `Final defasada ${Math.abs(Math.round(final.dev))}° ${final.dev > 0 ? 'à direita' : 'à esquerda'} do “H” — além do prolongamento dos limites do SLO, admitida pela exigência de través (máx. 45°). Preservar as margens de obstáculos da UM.` });
+      else if (Math.abs(final.dev) > 0 && !final.manual)
         alerts.push({ t: 'info', m: `Final defasada ${Math.abs(Math.round(final.dev))}° ${final.dev > 0 ? 'à direita' : 'à esquerda'} do “H” para reduzir o través.` });
     }
     if (cls.changed)
@@ -193,6 +214,7 @@
       el.resFinal.textContent = fmtHdg(final.hdg);
       el.resFinalSub.textContent = (final.manual ? 'Proa manual · ' : 'Sugerida · ') +
         `defasagem ${Math.abs(Math.round(final.dev || 0))}° do “H”` +
+        (final.inSlo === false ? ' · além dos limites do SLO' : ' · dentro do SLO') +
         (st.sloAngle === 180 ? ' · SLO 180°' : '');
       el.resWind.innerHTML = st.windKt
         ? `${final.head >= 0 ? '▼' : '▲'} ${Math.abs(final.head).toFixed(0)} <span class="unit">kt proa</span> · ${Math.abs(final.cross).toFixed(0)} <span class="unit">kt través</span>`
