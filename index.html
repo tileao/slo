@@ -98,24 +98,6 @@
             </label>
           </div>
 
-          <div class="section-label">Movimento do helideque (Helideck Report)</div>
-          <div class="form-grid form-grid-2">
-            <label class="field"><span>Balanço / caturro (°)</span>
-              <input id="deckRoll" type="number" inputmode="decimal" enterkeyhint="next" min="0" max="30" step="0.1" placeholder="opcional">
-            </label>
-            <label class="field"><span>Inclinação (°)</span>
-              <input id="deckInc" type="number" inputmode="decimal" enterkeyhint="next" min="0" max="30" step="0.1" placeholder="opcional">
-            </label>
-          </div>
-          <div class="form-grid form-grid-2">
-            <label class="field"><span>Razão de arfagem (m/s)</span>
-              <input id="deckHeaveRate" type="number" inputmode="decimal" enterkeyhint="next" min="0" max="10" step="0.1" placeholder="opcional">
-            </label>
-            <label class="field"><span>Arfagem (m)</span>
-              <input id="deckHeave" type="number" inputmode="decimal" enterkeyhint="next" min="0" max="20" step="0.1" placeholder="opcional">
-            </label>
-          </div>
-
           <div class="section-label">Tripulação</div>
           <div class="form-grid form-grid-2">
             <label class="field"><span>Lado do PF</span>
@@ -214,33 +196,11 @@
           <details class="brief-card">
             <summary>Comunicações e checklists</summary>
             <ul class="brief-list">
-              <li>30 min do ETA: chamada inicial · rádio operador dita as coordenadas (não sugerir) · conferir com o waypoint ativo do FMS</li>
+              <li>30 min do ETA: chamada inicial · conferir coordenadas da UM no FMS</li>
               <li>5 min do ETA: vento e proa da UM atualizados → revisar este briefing</li>
               <li>5 NM: Before Landing Checklist completo · sobrevoo a 80 KIAS</li>
               <li>Vertical: leitura do código ICAO (PF) + cotejamento (PM)</li>
               <li>Final: Final Approach Checklist · trem checado · green deck · reconfirmar ICAO</li>
-              <li>Intenções na frequência de coordenação offshore</li>
-            </ul>
-          </details>
-
-          <details class="brief-card">
-            <summary>SLO / SOAL — NORMAM-223</summary>
-            <ul class="brief-list">
-              <li>SLO 210° (180° em UM acoplada por gangway) · limite externo 500 m</li>
-              <li>Chevron pode variar até ±15° — traço do “H” paralelo à bissetriz variada</li>
-              <li>SOAL (setor de 150° oposto): <strong>sobrevoo proibido</strong></li>
-              <li>Gradiente negativo (≥180° abaixo do helideque): evitar sobrevoo da faixa de alerta</li>
-              <li>Entrada sobre o helideque (LDP → círculo de toque) integralmente dentro do SLO, cauda livre</li>
-            </ul>
-          </details>
-
-          <details class="brief-card">
-            <summary>Barreiras contra WDL</summary>
-            <ul class="brief-list">
-              <li>Não selecionar plataforma a &gt;5 NM — manter cross-check com o FMS até a AAFD no visual</li>
-              <li>Validação independente PF/PM — perguntar “o que indica que pode estar errado?” em vez de buscar confirmação</li>
-              <li>Leitura do código ICAO na vertical <strong>e</strong> na curta final, antes do LDP</li>
-              <li>UM semelhantes nas proximidades: PM mantém a UM no campo visual e narra o posicionamento relativo</li>
             </ul>
           </details>
         </div>
