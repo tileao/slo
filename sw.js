@@ -1,4 +1,4 @@
-const CACHE = 'slo-circuito-offshore-v8';
+const CACHE = 'slo-circuito-offshore-v9';
 const PRECACHE = [
   './',
   './index.html',
