@@ -11,26 +11,16 @@ vigentes.
 A partir dos dados da UM (classe e posição do helideque, aproamento,
 orientação do "H", SLO) e do vento:
 
-- sugere a **proa de aproximação final** — preferencialmente dentro do
-  prolongamento dos limites laterais do SLO; defasagem além dos limites
-  (máx. 45° do "H") somente quando o través exigir, sempre inferior ao
-  limite da aeronave — ou valida uma proa manual;
+- sugere a **proa de aproximação final** (defasagem máxima de 45° do "H",
+  vento de través dentro do limite da aeronave) ou valida uma proa manual;
 - calcula componentes de **vento de proa e través** na final;
-- aplica a **reclassificação da classe do helideque** com vento de alheta/popa
-  e valida a classe declarada contra a posição do helideque (NORMAM-223);
-- confere o **movimento do helideque** (balanço/caturro, inclinação, razão de
-  arfagem e arfagem) contra os limites diurnos da Tabela 1 da NORMAM-223
-  (helicóptero categoria B) para a classe efetiva;
+- aplica a **reclassificação da classe do helideque** com vento de alheta/popa;
 - monta o **circuito de tráfego** (lado das curvas pelo lado do PF, proas das
   pernas, GS estimada, distâncias de referência, 500 ft RADALT / 80 KIAS);
 - define o **plano de arremetida** e exibe cartões de referência
   (aproximação estabilizada, comunicações e checklists);
-- desenha o **diagrama do circuito** (UM, SLO, SOAL, vento e pernas) em
-  canvas, com tela cheia e exportação em PDF.
-
-As regras implementadas seguem o `SLO MODULE SPEC.md` (Omni SOP 52 Rev. 00 +
-NORMAM-223/DPC Rev. 2025), com as constantes centralizadas no objeto `SPEC`
-do `app.js`.
+- desenha o **diagrama do circuito** (UM, SLO, vento e pernas) em canvas,
+  com tela cheia e exportação em PDF.
 
 ## Como testar localmente
 

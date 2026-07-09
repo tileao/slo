@@ -22,25 +22,6 @@
     return Number.isFinite(n) ? n : null;
   };
 
-  /* ---------- constantes de regra (SLO MODULE SPEC §9 — SOP 52 Rev. 00 + NORMAM-223 Rev. 2025) ---------- */
-  const SPEC = {
-    slo: { sectorDeg: 210, coupledSectorDeg: 180, externalLimitM: 500,
-           chevronVariationDeg: 15, soalSectorDeg: 150 },
-    finalHeading: { maxFromHDeg: 45 },
-    /* limites de movimento da UM — helicóptero categoria B (NORMAM-223 Tabela 1);
-       módulo diurno usa .day; .night mantido para referência (Classe 3 noturno proibido) */
-    deckLimitsCatB: {
-      '1': { day: { rollPitchDeg: 4, incDeg: 4.5, heaveRateMs: 1.3, heaveM: 5.0 },
-             night: { rollPitchDeg: 4, incDeg: 4.5, heaveRateMs: 1.0, heaveM: 4.0 } },
-      '2': { day: { rollPitchDeg: 3, incDeg: 3.5, heaveRateMs: 1.0, heaveM: 3.0 },
-             night: { rollPitchDeg: 2, incDeg: 2.5, heaveRateMs: 0.5, heaveM: 1.5 } },
-      '3': { day: { rollPitchDeg: 3, incDeg: 3.5, heaveRateMs: 1.0, heaveM: 3.0 },
-             night: null }
-    },
-    /* classe fixa pela posição do helideque (NORMAM-223 cap. 9) */
-    classByDeckPos: { 'meia-nau': '2', 'proa': '3', 'deslocado': '3' }
-  };
-
   /* componentes de vento sobre uma proa: head + = vento de proa; cross + = pela direita */
   function windComp(windFrom, windKt, heading){
     const d = angDiff(windFrom, heading);
@@ -54,8 +35,7 @@
   /* ---------- leitura do formulário ---------- */
   const $ = id => document.getElementById(id);
   const FIELDS = ['umIcao','deckClass','deckPos','shipHeading','hOrientation','sloAngle',
-                  'sloBisector','finalManual','windFrom','windKt','xwindLimit','pfSide','gaSide',
-                  'deckRoll','deckInc','deckHeaveRate','deckHeave'];
+                  'sloBisector','finalManual','windFrom','windKt','xwindLimit','pfSide','gaSide'];
 
   function readState(){
     const H = num($('hOrientation').value);
@@ -73,51 +53,29 @@
       windKt: num($('windKt').value) ?? 0,
       xwindLimit: num($('xwindLimit').value) ?? 35,
       pfSide: $('pfSide').value,
-      gaSide: $('gaSide').value,
-      deckRoll: num($('deckRoll').value),
-      deckInc: num($('deckInc').value),
-      deckHeaveRate: num($('deckHeaveRate').value),
-      deckHeave: num($('deckHeave').value)
+      gaSide: $('gaSide').value
     };
   }
 
   /* ---------- lógica operacional ---------- */
 
-  /* meia-abertura do prolongamento dos limites laterais do SLO em relação à
-     proa de aproximação pela bissetriz: 15° no SLO 210°, 0° no SLO 180° */
-  const sloHalfWindow = st => Math.max(0, st.sloAngle / 2 - 90);
-
-  /* proa dentro do prolongamento dos limites laterais do SLO? */
-  function inSloSector(hdg, st){
-    const bis = st.sloBisector != null ? st.sloBisector : norm(st.H);
-    return Math.abs(angDiff(hdg, bis)) <= sloHalfWindow(st);
-  }
-
-  /* proa final sugerida (SOP 52 §5.4): preferencialmente dentro do prolongamento
-     dos limites laterais do SLO; defasagem além dos limites (máx. 45° do "H")
-     admitida somente quando o través impedir a final dentro do prolongamento.
-     Através deve ser inferior ao limite; privilegia componente de vento de proa. */
+  /* proa final sugerida: alinhada ao "H", defasagem máx. 45°, través dentro do limite,
+     privilegiando componente de vento de proa */
   function suggestFinal(st){
     if (st.H == null) return null;
     if (st.windFrom == null || !st.windKt){
-      return { hdg: norm(st.H), dev: 0, head: 0, cross: 0, calm: true, inSlo: true };
+      return { hdg: norm(st.H), dev: 0, head: 0, cross: 0, calm: true };
     }
-    const maxDev = SPEC.finalHeading.maxFromHDeg;
-    const pick = insideOnly => {
-      let best = null;
-      for (let dev = -maxDev; dev <= maxDev; dev++){
-        const h = norm(st.H + dev);
-        const inSlo = inSloSector(h, st);
-        if (insideOnly && !inSlo) continue;
-        const c = windComp(st.windFrom, st.windKt, h);
-        if (Math.abs(c.cross) >= st.xwindLimit) continue;
-        // favorece vento de proa; pequena penalidade por defasagem do H
-        const score = c.head - 0.2 * Math.abs(dev);
-        if (!best || score > best.score) best = { hdg: h, dev, head: c.head, cross: c.cross, score, inSlo };
-      }
-      return best;
-    };
-    return pick(true) || pick(false); // null => inviável dentro dos limites
+    let best = null;
+    for (let dev = -45; dev <= 45; dev++){
+      const h = norm(st.H + dev);
+      const c = windComp(st.windFrom, st.windKt, h);
+      if (Math.abs(c.cross) > st.xwindLimit) continue;
+      // favorece vento de proa; pequena penalidade por defasagem do H
+      const score = c.head - 0.2 * Math.abs(dev);
+      if (!best || score > best.score) best = { hdg: h, dev, head: c.head, cross: c.cross, score };
+    }
+    return best; // null => inviável dentro dos limites
   }
 
   /* setor do vento em relação ao aproamento da UM (nomenclatura náutica) */
@@ -190,17 +148,15 @@
         const dev = angDiff(h, st.H);
         const c = (st.windFrom != null && st.windKt)
           ? windComp(st.windFrom, st.windKt, h) : { head: 0, cross: 0 };
-        final = { hdg: h, dev, head: c.head, cross: c.cross, manual: true, inSlo: inSloSector(h, st) };
+        final = { hdg: h, dev, head: c.head, cross: c.cross, manual: true };
         if (Math.abs(dev) > 45)
           alerts.push({ t: 'bad', m: `Proa manual com defasagem de ${Math.abs(Math.round(dev))}° do “H” — acima de 45°. Fora dos limites: descontinuar / novo circuito.` });
-        else if (!final.inSlo)
-          alerts.push({ t: 'warn', m: `Proa manual fora do prolongamento dos limites do SLO (defasagem de ${Math.abs(Math.round(dev))}° do “H”) — admissível até 45° somente quando o través impedir a final dentro do SLO.` });
-        if (Math.abs(c.cross) >= st.xwindLimit)
-          alerts.push({ t: 'bad', m: `Través de ${Math.abs(c.cross).toFixed(0)} kt — não inferior ao limite de ${st.xwindLimit} kt na proa manual.` });
+        if (Math.abs(c.cross) > st.xwindLimit)
+          alerts.push({ t: 'bad', m: `Través de ${Math.abs(c.cross).toFixed(0)} kt acima do limite de ${st.xwindLimit} kt na proa manual.` });
       } else {
         final = suggestFinal(st);
         if (!final)
-          alerts.push({ t: 'bad', m: `Nenhuma proa com defasagem ≤ 45° do “H” mantém o través inferior a ${st.xwindLimit} kt. Aproximação inviável — reavaliar.` });
+          alerts.push({ t: 'bad', m: `Nenhuma proa com defasagem ≤ 45° do “H” mantém o través dentro de ${st.xwindLimit} kt. Aproximação inviável — reavaliar.` });
       }
     }
 
@@ -208,44 +164,17 @@
       circuit = buildCircuit(final.hdg, st);
       if (final.head < -1)
         alerts.push({ t: 'warn', m: `Componente de vento de cauda na final (${Math.abs(final.head).toFixed(0)} kt). Reavaliar proa/perfil.` });
-      if (Math.abs(final.cross) > 0.8 * st.xwindLimit && Math.abs(final.cross) < st.xwindLimit)
+      if (Math.abs(final.cross) > 0.8 * st.xwindLimit && Math.abs(final.cross) <= st.xwindLimit)
         alerts.push({ t: 'warn', m: `Través de ${Math.abs(final.cross).toFixed(0)} kt — próximo do limite de ${st.xwindLimit} kt.` });
-      if (!final.manual && !final.inSlo)
-        alerts.push({ t: 'warn', m: `Final defasada ${Math.abs(Math.round(final.dev))}° ${final.dev > 0 ? 'à direita' : 'à esquerda'} do “H” — além do prolongamento dos limites do SLO, admitida pela exigência de través (máx. 45°). Preservar as margens de obstáculos da UM.` });
-      else if (Math.abs(final.dev) > 0 && !final.manual)
+      if (Math.abs(final.dev) > 0 && !final.manual)
         alerts.push({ t: 'info', m: `Final defasada ${Math.abs(Math.round(final.dev))}° ${final.dev > 0 ? 'à direita' : 'à esquerda'} do “H” para reduzir o través.` });
     }
     if (cls.changed)
       alerts.push({ t: 'info', m: `Vento de ${cls.sec}: helideque reclassificado de Classe ${st.deckClass} para Classe ${cls.cls}.` });
 
-    // classe fixa pela posição do helideque (NORMAM-223 cap. 9)
-    const posCls = SPEC.classByDeckPos[st.deckPos];
-    if (posCls && st.deckClass !== posCls){
-      const posLabel = { 'proa': 'na proa/superestrutura', 'meia-nau': 'a meia-nau',
-                         'deslocado': 'adaptado (hatch cover / lateral do convés)' }[st.deckPos];
-      alerts.push({ t: 'warn', m: `Helideque ${posLabel} é sempre Classe ${posCls} (NORMAM-223) — declarado Classe ${st.deckClass}. Conferir no Flight Preview.` });
-    }
-
-    // variação do chevron limitada a ±15° (NORMAM-223 art. 4.2)
-    if (st.H != null && st.sloBisector != null){
-      const bisDev = Math.abs(angDiff(st.sloBisector, st.H));
-      if (bisDev > SPEC.slo.chevronVariationDeg)
-        alerts.push({ t: 'warn', m: `Bissetriz do SLO defasada ${Math.round(bisDev)}° do “H” — a variação do chevron é limitada a ±15° (NORMAM-223). Conferir dados.` });
-    }
-
-    // movimento do helideque × limites diurnos da classe efetiva (NORMAM-223 Tabela 1, cat. B)
-    const lim = SPEC.deckLimitsCatB[cls.cls].day;
-    [['Balanço/caturro', st.deckRoll, lim.rollPitchDeg, '°'],
-     ['Inclinação', st.deckInc, lim.incDeg, '°'],
-     ['Razão de arfagem', st.deckHeaveRate, lim.heaveRateMs, ' m/s'],
-     ['Arfagem', st.deckHeave, lim.heaveM, ' m']].forEach(([name, v, max, unit]) => {
-      if (v != null && v > max)
-        alerts.push({ t: 'bad', m: `${name} de ${String(v).replace('.', ',')}${unit} acima do limite diurno de ${String(max).replace('.', ',')}${unit} para Classe ${cls.cls} (NORMAM-223 Tab. 1, cat. B).` });
-    });
-
     const hasBad = alerts.some(a => a.t === 'bad');
-    if (hasBad){ status = 'bad'; statusText = 'Fora de limites'; }
-    else if (!ready){ status = 'warn'; statusText = 'Aguardando briefing'; }
+    if (!ready){ status = 'warn'; statusText = 'Aguardando briefing'; }
+    else if (hasBad){ status = 'bad'; statusText = 'Fora de limites'; }
     else if (alerts.some(a => a.t === 'warn')){ status = 'warn'; statusText = 'Briefing com ressalvas'; }
     else { status = 'ok'; statusText = 'Briefing OK'; }
 
@@ -264,7 +193,6 @@
       el.resFinal.textContent = fmtHdg(final.hdg);
       el.resFinalSub.textContent = (final.manual ? 'Proa manual · ' : 'Sugerida · ') +
         `defasagem ${Math.abs(Math.round(final.dev || 0))}° do “H”` +
-        (final.inSlo === false ? ' · além dos limites do SLO' : ' · dentro do SLO') +
         (st.sloAngle === 180 ? ' · SLO 180°' : '');
       el.resWind.innerHTML = st.windKt
         ? `${final.head >= 0 ? '▼' : '▲'} ${Math.abs(final.head).toFixed(0)} <span class="unit">kt proa</span> · ${Math.abs(final.cross).toFixed(0)} <span class="unit">kt través</span>`
@@ -280,10 +208,9 @@
     }
 
     el.resClass.textContent = `Classe ${cls.cls}`;
-    el.resClassSub.textContent = (cls.changed
+    el.resClassSub.textContent = cls.changed
       ? `Reclassificado (era Classe ${st.deckClass}) — vento de ${cls.sec}.`
-      : (cls.sec ? `Vento de ${cls.sec} — sem reclassificação.` : 'Sem dados de vento/aproamento.')) +
-      (cls.cls === '3' ? ' Noturno proibido em Classe 3 (AJB).' : '');
+      : (cls.sec ? `Vento de ${cls.sec} — sem reclassificação.` : 'Sem dados de vento/aproamento.');
 
     if (circuit){
       el.resCircuit.textContent = circuit.side === 'esq' ? 'Curvas à esquerda' : 'Curvas à direita';
@@ -421,24 +348,6 @@
     ctx.font = '700 10px Inter, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('SLO ' + st.sloAngle + '°', X(P.D) + bv.e * (sloR + 16), Y(P.D) - bv.n * (sloR + 16));
-
-    // SOAL — setor de obstáculos limitados, oposto ao SLO: sobrevoo proibido (NORMAM-223 art. 4.4)
-    const soalHalf = (360 - st.sloAngle) / 2;
-    const soalC = norm(bis); // lado dos obstáculos da UM
-    const soalR = 0.5 * scale;
-    const s0 = rad(norm(soalC - soalHalf) - 90), s1 = rad(norm(soalC + soalHalf) - 90);
-    ctx.beginPath();
-    ctx.moveTo(X(P.D), Y(P.D));
-    ctx.arc(X(P.D), Y(P.D), soalR, s0, s1, false);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(255,107,107,.10)';
-    ctx.strokeStyle = 'rgba(255,107,107,.4)';
-    ctx.fill(); ctx.stroke();
-    const sv2 = vec(soalC);
-    ctx.fillStyle = 'rgba(255,107,107,.85)';
-    ctx.font = '700 10px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('SOAL — não sobrevoar', X(P.D) + sv2.e * (soalR + 18), Y(P.D) - sv2.n * (soalR + 18));
 
     // navio (fora de escala)
     if (st.shipHeading != null){
