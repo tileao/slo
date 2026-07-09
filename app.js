@@ -38,14 +38,23 @@
                   'sloBisector','finalManual','windFrom','windKt','xwindLimit'];
 
   function readState(){
-    const bis = num($('sloBisector').value);
+    const bisIn = num($('sloBisector').value);
+    const deckPos = $('deckPos').value;
+    const ship = num($('shipHeading').value);
+    // aproamento do helideque: proa → mesmo da UM; popa → recíproca;
+    // deslocado da regra (ex.: FPSO com deck rotacionado) → campo manual
+    let sloBisector = bisIn != null ? norm(bisIn) : null, bisAuto = false;
+    if (sloBisector == null && ship != null){
+      if (deckPos === 'proa'){ sloBisector = norm(ship); bisAuto = true; }
+      else if (deckPos === 'popa'){ sloBisector = norm(ship + 180); bisAuto = true; }
+    }
     return {
       umIcao: ($('umIcao').value || '').trim().toUpperCase(),
       deckClass: $('deckClass').value,
-      deckPos: $('deckPos').value,
-      shipHeading: num($('shipHeading').value),
+      deckPos,
+      shipHeading: ship,
       sloAngle: Number($('sloAngle').value),
-      sloBisector: bis != null ? norm(bis) : null,
+      sloBisector, bisAuto,
       finalManual: num($('finalManual').value),
       windFrom: num($('windFrom').value),
       windKt: num($('windKt').value) ?? 0,
@@ -233,6 +242,10 @@
 
     el.alerts.innerHTML = alerts.map(a => `<div class="alert ${a.t}">${a.m}</div>`).join('');
 
+    // mostra o aproamento derivado (proa → UM; popa → recíproca) no próprio campo
+    $('sloBisector').placeholder = st.bisAuto
+      ? 'auto ' + fmtHdg(st.sloBisector) : 'auto (proa/popa da UM)';
+
     if (final){
       el.resFinal.textContent = fmtHdg(final.hdg);
       el.resFinalSub.textContent = (final.manual ? 'Proa manual · ' : final.intoWind ? 'Sugerida · aproada ao vento · ' : 'Sugerida · ') +
@@ -249,7 +262,7 @@
         : 'Sem vento informado.';
     } else {
       el.resFinal.textContent = '—';
-      el.resFinalSub.textContent = st.sloBisector == null ? 'Informe o aproamento do helideque.' : 'Sem proa viável nos limites.';
+      el.resFinalSub.textContent = st.sloBisector == null ? 'Informe o aproamento do helideque (ou aproamento da UM + posição proa/popa).' : 'Sem proa viável nos limites.';
       el.resWind.textContent = '—';
       el.resWindSub.textContent = 'Proa / través.';
     }
@@ -340,7 +353,7 @@
       ctx.fillStyle = 'rgba(157,176,196,.6)';
       ctx.font = '600 13px Inter, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('Informe o aproamento do helideque para desenhar o circuito.', cssW / 2, cssH / 2);
+      ctx.fillText('Informe o aproamento do helideque (ou da UM + posição) para desenhar.', cssW / 2, cssH / 2);
       return;
     }
 

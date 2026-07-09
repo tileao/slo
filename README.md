@@ -10,7 +10,9 @@ vigentes.
 
 A partir dos dados da UM (classe e posição do helideque, aproamento da UM,
 aproamento do helideque — a bissetriz do SLO, voltada para o mar; o "H" é
-pintado perpendicular a ela —, SLO) e do vento:
+pintado perpendicular a ela; derivado automaticamente da posição (proa =
+aproamento da UM; popa = recíproca) e informado manualmente apenas em decks
+deslocados —, SLO) e do vento:
 
 - sugere a **proa de aproximação final** — a princípio aproada ao vento,
   quando a chegada vem por dentro do SLO; fora disso considera as
