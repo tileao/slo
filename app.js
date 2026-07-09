@@ -34,20 +34,18 @@
 
   /* ---------- leitura do formulário ---------- */
   const $ = id => document.getElementById(id);
-  const FIELDS = ['umIcao','deckClass','deckPos','shipHeading','hOrientation','sloAngle',
+  const FIELDS = ['umIcao','deckClass','deckPos','shipHeading','sloAngle',
                   'sloBisector','finalManual','windFrom','windKt','xwindLimit'];
 
   function readState(){
-    const H = num($('hOrientation').value);
     const bis = num($('sloBisector').value);
     return {
       umIcao: ($('umIcao').value || '').trim().toUpperCase(),
       deckClass: $('deckClass').value,
       deckPos: $('deckPos').value,
       shipHeading: num($('shipHeading').value),
-      H,
       sloAngle: Number($('sloAngle').value),
-      sloBisector: bis != null ? norm(bis) : (H != null ? norm(H) : null),
+      sloBisector: bis != null ? norm(bis) : null,
       finalManual: num($('finalManual').value),
       windFrom: num($('windFrom').value),
       windKt: num($('windKt').value) ?? 0,
@@ -57,27 +55,38 @@
 
   /* ---------- lógica operacional ---------- */
 
-  /* A orientação do "H" (= bissetriz do SLO) aponta PARA O MAR — o setor livre.
-     A aproximação vem do mar, através do SLO: a proa alinhada é a recíproca. */
-  const approachAxis = st => norm((st.sloBisector != null ? st.sloBisector : st.H) + 180);
+  /* A bissetriz do SLO (= aproamento do helideque) aponta para o mar.
+     O "H" é pintado perpendicular a ela: seu eixo é a referência da final,
+     que cruza a boca do SLO passando abeam o deck — assim o escape reto em
+     frente permanece sobre a água, dentro do setor. */
 
-  /* proa final sugerida: alinhada ao eixo de aproximação (recíproco do "H"),
-     defasagem máx. 45°, través dentro do limite, privilegiando vento de proa */
+  /* defasagem em relação ao sentido mais próximo do eixo do "H" */
+  function axisDev(h, bis){
+    const a = angDiff(h, norm(bis + 90)), b = angDiff(h, norm(bis - 90));
+    return Math.abs(a) <= Math.abs(b) ? a : b;
+  }
+
+  /* proa final sugerida: nos dois sentidos do eixo do "H", defasagem máx. 45°;
+     preferência pelo prolongamento dos limites do SLO (±15° no setor de 210°);
+     través dentro do limite, privilegiando componente de vento de proa */
   function suggestFinal(st){
-    if (st.H == null) return null;
-    const axis = norm(st.H + 180);
-    if (st.windFrom == null || !st.windKt){
-      return { hdg: axis, dev: 0, head: 0, cross: 0, calm: true };
-    }
+    const bis = st.sloBisector;
+    if (bis == null) return null;
+    const calm = st.windFrom == null || !st.windKt;
+    const win = Math.max(0, st.sloAngle / 2 - 90);
     let best = null;
-    for (let dev = -45; dev <= 45; dev++){
-      const h = norm(axis + dev);
-      const c = windComp(st.windFrom, st.windKt, h);
-      if (Math.abs(c.cross) > st.xwindLimit) continue;
-      // favorece vento de proa; pequena penalidade por defasagem do H
-      const score = c.head - 0.2 * Math.abs(dev);
-      if (!best || score > best.score) best = { hdg: h, dev, head: c.head, cross: c.cross, score };
-    }
+    [norm(bis + 90), norm(bis - 90)].forEach(axis => {
+      for (let dev = -45; dev <= 45; dev++){
+        const h = norm(axis + dev);
+        const c = calm ? { head: 0, cross: 0 } : windComp(st.windFrom, st.windKt, h);
+        if (Math.abs(c.cross) > st.xwindLimit) continue;
+        const inSlo = Math.abs(dev) <= win;
+        // bônus mantém a final no prolongamento do SLO sempre que possível
+        const score = c.head - 0.2 * Math.abs(dev) + (inSlo ? 1000 : 0);
+        if (!best || score > best.score)
+          best = { hdg: h, dev, head: c.head, cross: c.cross, score, inSlo, calm };
+      }
+    });
     return best; // null => inviável dentro dos limites
   }
 
@@ -92,20 +101,11 @@
     return 'popa';
   }
 
-  /* lado do PF (= lado do deck na final deslocada), automático:
-     - final defasada além do prolongamento dos limites laterais do SLO
-       (±15° da bissetriz no SLO 210°): a geometria força o deck para o lado
-       oposto à defasagem, mantendo a final deslocada e o escape dentro do setor;
-     - dentro do prolongamento: deck pelo lado de onde vem o través, para que o
-       deslocamento no LDP seja contra o vento e o escape derive para longe da UM;
-     - vento calmo/alinhado: assento direito (perfil normal do RFM). */
+  /* lado do PF: o deck fica sempre abeam, do lado da UM (recíproco da
+     bissetriz); o sentido da final — escolhido pelo vento — define o assento */
   function autoPfSide(st, final){
-    const win = Math.max(0, st.sloAngle / 2 - 90);
-    const dBis = angDiff(final.hdg, approachAxis(st));
-    if (dBis > win) return { side: 'esq', why: 'slo' };
-    if (dBis < -win) return { side: 'dir', why: 'slo' };
-    if (Math.abs(final.cross) > 2) return { side: final.cross > 0 ? 'dir' : 'esq', why: 'vento' };
-    return { side: 'dir', why: 'padrao' };
+    const rel = angDiff(norm(st.sloBisector + 180), final.hdg);
+    return { side: rel >= 0 ? 'dir' : 'esq' };
   }
 
   /* Classe 2 <-> 3 com vento de alheta ou popa */
@@ -158,11 +158,11 @@
     let status = 'warn', statusText = 'Aguardando briefing';
     let final = null, circuit = null, pf = null, cls = effectiveClass(st);
 
-    const ready = st.H != null;
+    const ready = st.sloBisector != null;
     if (ready){
       if (st.finalManual != null){
         const h = norm(st.finalManual);
-        const dev = angDiff(h, norm(st.H + 180));
+        const dev = axisDev(h, st.sloBisector);
         const c = (st.windFrom != null && st.windKt)
           ? windComp(st.windFrom, st.windKt, h) : { head: 0, cross: 0 };
         final = { hdg: h, dev, head: c.head, cross: c.cross, manual: true };
@@ -210,7 +210,8 @@
     if (final){
       el.resFinal.textContent = fmtHdg(final.hdg);
       el.resFinalSub.textContent = (final.manual ? 'Proa manual · ' : 'Sugerida · ') +
-        `defasagem ${Math.abs(Math.round(final.dev || 0))}° do “H”` +
+        `defasagem ${Math.abs(Math.round(final.dev || 0))}° do eixo do “H”` +
+        (final.inSlo === false ? ' · além do prolongamento do SLO' : '') +
         (st.sloAngle === 180 ? ' · SLO 180°' : '');
       el.resWind.innerHTML = st.windKt
         ? `${final.head >= 0 ? '▼' : '▲'} ${Math.abs(final.head).toFixed(0)} <span class="unit">kt proa</span> · ${Math.abs(final.cross).toFixed(0)} <span class="unit">kt través</span>`
@@ -220,7 +221,7 @@
         : 'Sem vento informado.';
     } else {
       el.resFinal.textContent = '—';
-      el.resFinalSub.textContent = st.H == null ? 'Informe a orientação do “H”.' : 'Sem proa viável nos limites.';
+      el.resFinalSub.textContent = st.sloBisector == null ? 'Informe o aproamento do helideque.' : 'Sem proa viável nos limites.';
       el.resWind.textContent = '—';
       el.resWindSub.textContent = 'Proa / través.';
     }
@@ -232,10 +233,7 @@
 
     if (circuit){
       el.resCircuit.textContent = circuit.side === 'esq' ? 'Curvas à esquerda' : 'Curvas à direita';
-      el.resCircuitSub.textContent = `PF no assento ${pf.side === 'esq' ? 'esquerdo' : 'direito'} — ` +
-        (pf.why === 'slo' ? 'defasagem da final força o deck para este lado (SLO).'
-         : pf.why === 'vento' ? `través pela ${final.cross > 0 ? 'direita' : 'esquerda'}: deck e vento pelo lado do PF.`
-         : 'vento calmo/alinhado (perfil normal).') + ' Avaliar troca PF/PM após o sobrevoo.';
+      el.resCircuitSub.textContent = `PF no assento ${pf.side === 'esq' ? 'esquerdo' : 'direito'} — deck abeam pelo lado do PF; sentido da final escolhido pelo vento. Avaliar troca PF/PM após o sobrevoo.`;
       el.legsBody.innerHTML = circuit.legs.map(l =>
         `<tr><td>${l.name}</td><td class="hdg">${fmtHdg(l.hdg)}</td><td>${l.gs} kt</td><td class="dim">${l.ref}</td></tr>`).join('');
       el.gaText.textContent = 'Antes do LDP: RETO EM FRENTE, no prolongamento da final deslocada — escape livre dentro do SLO. Após o LDP: pousar. Curvas de saída conforme briefing, para o lado livre de obstáculos.';
@@ -310,16 +308,16 @@
     ctx.beginPath(); ctx.moveTo(cssW - 28, 31); ctx.lineTo(cssW - 24, 25); ctx.lineTo(cssW - 20, 31); ctx.fill();
     ctx.restore();
 
-    if (!r || !r.st || r.st.H == null){
+    if (!r || !r.st || r.st.sloBisector == null){
       ctx.fillStyle = 'rgba(157,176,196,.6)';
       ctx.font = '600 13px Inter, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('Informe a orientação do “H” para desenhar o circuito.', cssW / 2, cssH / 2);
+      ctx.fillText('Informe o aproamento do helideque para desenhar o circuito.', cssW / 2, cssH / 2);
       return;
     }
 
     const st = r.st;
-    const finalHdg = r.final ? r.final.hdg : norm(st.H + 180);
+    const finalHdg = r.final ? r.final.hdg : norm(st.sloBisector + 90);
     const side = r.circuit ? r.circuit.side : 'dir';
     const P = circuitPoints(finalHdg, side);
 
@@ -349,7 +347,7 @@
     ctx.setLineDash([]);
 
     // SLO — setor livre a partir do helideque, aberto para o lado da aproximação
-    const bis = st.sloBisector != null ? st.sloBisector : norm(st.H);
+    const bis = st.sloBisector;
     const half = st.sloAngle / 2;
     const outBear = norm(bis); // SLO voltado para o mar — a aeronave vem deste lado
     const sloR = 0.62 * scale;
@@ -408,7 +406,7 @@
     ctx.lineWidth = 1;
     ctx.save();
     ctx.translate(X(P.D), Y(P.D));
-    ctx.rotate(rad(norm(st.H)));
+    ctx.rotate(rad(norm(st.sloBisector + 90))); // eixo do "H" perpendicular à bissetriz
     ctx.fillStyle = '#fff';
     ctx.font = '800 ' + Math.max(10, 0.08 * scale) + 'px Inter, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -586,7 +584,7 @@
     area.innerHTML = `
       <h1>Briefing — Circuito Offshore Diurno${st.umIcao ? ' · ' + st.umIcao : ''}</h1>
       <div class="p-sub">Classe efetiva ${r.cls.cls}${r.cls.changed ? ' (reclassificada)' : ''} ·
-        SLO ${st.sloAngle}° · “H” ${fmtHdg(st.H)} · Vento ${st.windKt ? fmtHdg(st.windFrom) + ' / ' + st.windKt + ' kt' : 'calmo'}</div>
+        SLO ${st.sloAngle}° · Helideque ${fmtHdg(st.sloBisector)} · Vento ${st.windKt ? fmtHdg(st.windFrom) + ' / ' + st.windKt + ' kt' : 'calmo'}</div>
       <div class="p-flags">${r.statusText}${r.alerts.length ? ' — ' + r.alerts.map(a => a.m).join(' | ') : ''}</div>
       <table>
         <tr><th>Perna</th><th>Proa</th><th>GS est.</th><th>Referência</th></tr>
