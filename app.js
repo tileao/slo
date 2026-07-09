@@ -57,16 +57,21 @@
 
   /* ---------- lógica operacional ---------- */
 
-  /* proa final sugerida: alinhada ao "H", defasagem máx. 45°, través dentro do limite,
-     privilegiando componente de vento de proa */
+  /* A orientação do "H" (= bissetriz do SLO) aponta PARA O MAR — o setor livre.
+     A aproximação vem do mar, através do SLO: a proa alinhada é a recíproca. */
+  const approachAxis = st => norm((st.sloBisector != null ? st.sloBisector : st.H) + 180);
+
+  /* proa final sugerida: alinhada ao eixo de aproximação (recíproco do "H"),
+     defasagem máx. 45°, través dentro do limite, privilegiando vento de proa */
   function suggestFinal(st){
     if (st.H == null) return null;
+    const axis = norm(st.H + 180);
     if (st.windFrom == null || !st.windKt){
-      return { hdg: norm(st.H), dev: 0, head: 0, cross: 0, calm: true };
+      return { hdg: axis, dev: 0, head: 0, cross: 0, calm: true };
     }
     let best = null;
     for (let dev = -45; dev <= 45; dev++){
-      const h = norm(st.H + dev);
+      const h = norm(axis + dev);
       const c = windComp(st.windFrom, st.windKt, h);
       if (Math.abs(c.cross) > st.xwindLimit) continue;
       // favorece vento de proa; pequena penalidade por defasagem do H
@@ -95,9 +100,8 @@
        deslocamento no LDP seja contra o vento e o escape derive para longe da UM;
      - vento calmo/alinhado: assento direito (perfil normal do RFM). */
   function autoPfSide(st, final){
-    const bis = st.sloBisector != null ? st.sloBisector : norm(st.H);
     const win = Math.max(0, st.sloAngle / 2 - 90);
-    const dBis = angDiff(final.hdg, bis);
+    const dBis = angDiff(final.hdg, approachAxis(st));
     if (dBis > win) return { side: 'esq', why: 'slo' };
     if (dBis < -win) return { side: 'dir', why: 'slo' };
     if (Math.abs(final.cross) > 2) return { side: final.cross > 0 ? 'dir' : 'esq', why: 'vento' };
@@ -158,7 +162,7 @@
     if (ready){
       if (st.finalManual != null){
         const h = norm(st.finalManual);
-        const dev = angDiff(h, st.H);
+        const dev = angDiff(h, norm(st.H + 180));
         const c = (st.windFrom != null && st.windKt)
           ? windComp(st.windFrom, st.windKt, h) : { head: 0, cross: 0 };
         final = { hdg: h, dev, head: c.head, cross: c.cross, manual: true };
@@ -315,7 +319,7 @@
     }
 
     const st = r.st;
-    const finalHdg = r.final ? r.final.hdg : norm(st.H);
+    const finalHdg = r.final ? r.final.hdg : norm(st.H + 180);
     const side = r.circuit ? r.circuit.side : 'dir';
     const P = circuitPoints(finalHdg, side);
 
@@ -347,7 +351,7 @@
     // SLO — setor livre a partir do helideque, aberto para o lado da aproximação
     const bis = st.sloBisector != null ? st.sloBisector : norm(st.H);
     const half = st.sloAngle / 2;
-    const outBear = norm(bis + 180); // aeronave vem deste lado
+    const outBear = norm(bis); // SLO voltado para o mar — a aeronave vem deste lado
     const sloR = 0.62 * scale;
     const a0 = rad(norm(outBear - half) - 90), a1 = rad(norm(outBear + half) - 90);
     ctx.beginPath();
