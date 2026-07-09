@@ -81,28 +81,36 @@
     return 'proibida';
   }
 
-  /* proa final sugerida: qualquer proa com chegada por dentro do SLO;
-     faixa tolerada somente quando o través exigir; privilegia vento de proa
-     e, em igualdade, o eixo do "H" (aproximação e escape contidos no setor) */
+  /* proa final sugerida:
+     1) a princípio, aproada ao vento — se a chegada vier por dentro do SLO;
+     2) fora disso, considerar as componentes: melhor proa por dentro do SLO
+        com través no limite e sem componente de cauda;
+     3) em último caso, as tolerâncias (30° além dos limites) e, só então,
+        proas com vento de cauda. Vento calmo → eixo do "H". */
   function suggestFinal(st){
-    if (st.sloBisector == null) return null;
-    const calm = st.windFrom == null || !st.windKt;
-    let best = null;
+    const bis = st.sloBisector;
+    if (bis == null) return null;
+    if (st.windFrom == null || !st.windKt)
+      return { hdg: norm(bis + 90), dev: 0, head: 0, cross: 0, band: 'dentro', calm: true };
+    const hw = norm(st.windFrom);
+    if (sloBand(hw, st) === 'dentro'){
+      const c = windComp(st.windFrom, st.windKt, hw);
+      return { hdg: hw, dev: axisDev(hw, bis), head: c.head, cross: c.cross,
+               band: 'dentro', intoWind: true };
+    }
+    const tiers = [null, null, null, null];
     for (let h = 0; h < 360; h++){
       const band = sloBand(h, st);
       if (band === 'proibida') continue;
-      const c = calm ? { head: 0, cross: 0 } : windComp(st.windFrom, st.windKt, h);
+      const c = windComp(st.windFrom, st.windKt, h);
       if (Math.abs(c.cross) > st.xwindLimit) continue;
-      const dev = axisDev(h, st.sloBisector);
-      // prioridade: dentro do SLO com vento de proa > tolerada com vento de
-      // proa > dentro com vento de cauda > tolerada com vento de cauda
-      const headOk = c.head > -1;
-      const score = c.head - 0.2 * Math.abs(dev) +
-        (band === 'dentro' ? (headOk ? 1000 : 100) : (headOk ? 500 : 0));
-      if (!best || score > best.score)
-        best = { hdg: norm(h), dev, head: c.head, cross: c.cross, score, band, calm };
+      const t = band === 'dentro' ? (c.head > -1 ? 0 : 2) : (c.head > -1 ? 1 : 3);
+      const dev = axisDev(h, bis);
+      const score = c.head - 0.05 * Math.abs(dev); // eixo do "H" só como desempate
+      if (!tiers[t] || score > tiers[t].score)
+        tiers[t] = { hdg: norm(h), dev, head: c.head, cross: c.cross, band, score };
     }
-    return best; // null => inviável dentro dos limites
+    return tiers[0] || tiers[1] || tiers[2] || tiers[3]; // null => inviável
   }
 
   /* setor do vento em relação ao aproamento da UM (nomenclatura náutica) */
@@ -203,7 +211,7 @@
       if (Math.abs(final.cross) > 0.8 * st.xwindLimit && Math.abs(final.cross) <= st.xwindLimit)
         alerts.push({ t: 'warn', m: `Través de ${Math.abs(final.cross).toFixed(0)} kt — próximo do limite de ${st.xwindLimit} kt.` });
       if (final.band === 'tolerada' && !final.manual)
-        alerts.push({ t: 'info', m: `Final além dos limites laterais do SLO (tolerância de 30° = 45° do “H”) para manter o través nos limites — segmento pós-LDP integralmente dentro do SLO.` });
+        alerts.push({ t: 'warn', m: `Final além dos limites laterais do SLO (tolerância de 30° = 45° do “H”) para manter o través nos limites — segmento pós-LDP integralmente dentro do SLO.` });
     }
     if (cls.changed)
       alerts.push({ t: 'info', m: `Vento de ${cls.sec}: helideque reclassificado de Classe ${st.deckClass} para Classe ${cls.cls}.` });
@@ -227,7 +235,7 @@
 
     if (final){
       el.resFinal.textContent = fmtHdg(final.hdg);
-      el.resFinalSub.textContent = (final.manual ? 'Proa manual · ' : 'Sugerida · ') +
+      el.resFinalSub.textContent = (final.manual ? 'Proa manual · ' : final.intoWind ? 'Sugerida · aproada ao vento · ' : 'Sugerida · ') +
         `defasagem ${Math.abs(Math.round(final.dev || 0))}° do eixo do “H”` +
         (final.band === 'tolerada' ? ' · além dos limites — pós-LDP dentro do SLO'
          : final.band === 'proibida' ? ' · chegada pelo setor de obstáculos'
@@ -392,6 +400,31 @@
     ctx.font = '700 10px Inter, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('SLO ' + st.sloAngle + '°', X(P.D) + bv.e * (sloR + 16), Y(P.D) - bv.n * (sloR + 16));
+
+    // faixas de tolerância (30° além dos limites) e setor proibido —
+    // desenhadas somente quando a final as utiliza
+    if (r.final && r.final.band !== 'dentro'){
+      const wedge = (b1, b2, fill, stroke) => {
+        ctx.beginPath();
+        ctx.moveTo(X(P.D), Y(P.D));
+        ctx.arc(X(P.D), Y(P.D), sloR, rad(norm(b1) - 90), rad(norm(b2) - 90), false);
+        ctx.closePath();
+        ctx.fillStyle = fill; ctx.strokeStyle = stroke;
+        ctx.fill(); ctx.stroke();
+      };
+      const yF = 'rgba(232,184,75,.13)', yS = 'rgba(232,184,75,.45)';
+      if (r.final.band === 'tolerada'){
+        // faixa amarela do lado por onde a final chega
+        const s = angDiff(norm(r.final.hdg + 180), bis) >= 0 ? 1 : -1;
+        if (s > 0) wedge(bis + half, bis + half + 30, yF, yS);
+        else wedge(bis - half - 30, bis - half, yF, yS);
+      } else {
+        // fora de qualquer tolerância: mostra as duas faixas e o setor proibido
+        wedge(bis + half, bis + half + 30, yF, yS);
+        wedge(bis - half - 30, bis - half, yF, yS);
+        wedge(bis + half + 30, bis + 360 - half - 30, 'rgba(255,107,107,.15)', 'rgba(255,107,107,.5)');
+      }
+    }
 
     // navio (fora de escala)
     if (st.shipHeading != null){
