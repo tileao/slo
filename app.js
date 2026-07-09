@@ -66,21 +66,29 @@
     return Math.abs(a) <= Math.abs(b) ? a : b;
   }
 
+  /* dentro do prolongamento dos limites laterais do SLO? (±15° do eixo no 210°) */
+  const sloWindow = st => Math.max(0, st.sloAngle / 2 - 90);
+  /* defasagem além do prolongamento só é admitida p/ o lado do mar: a proa deve
+     se afastar da bissetriz, mantendo a chegada por dentro do setor livre */
+  const seawardOk = (h, st) => Math.abs(angDiff(h, st.sloBisector)) >= 180 - st.sloAngle / 2;
+
   /* proa final sugerida: nos dois sentidos do eixo do "H", defasagem máx. 45°;
-     preferência pelo prolongamento dos limites do SLO (±15° no setor de 210°);
+     preferência pelo prolongamento dos limites do SLO; além dele, somente
+     defasando p/ o lado do mar (até 30° além dos limites = 45° do "H");
      través dentro do limite, privilegiando componente de vento de proa */
   function suggestFinal(st){
     const bis = st.sloBisector;
     if (bis == null) return null;
     const calm = st.windFrom == null || !st.windKt;
-    const win = Math.max(0, st.sloAngle / 2 - 90);
+    const win = sloWindow(st);
     let best = null;
     [norm(bis + 90), norm(bis - 90)].forEach(axis => {
       for (let dev = -45; dev <= 45; dev++){
         const h = norm(axis + dev);
+        const inSlo = Math.abs(dev) <= win;
+        if (!inSlo && !seawardOk(h, st)) continue; // entraria pelo setor de obstáculos
         const c = calm ? { head: 0, cross: 0 } : windComp(st.windFrom, st.windKt, h);
         if (Math.abs(c.cross) > st.xwindLimit) continue;
-        const inSlo = Math.abs(dev) <= win;
         // bônus mantém a final no prolongamento do SLO sempre que possível
         const score = c.head - 0.2 * Math.abs(dev) + (inSlo ? 1000 : 0);
         if (!best || score > best.score)
@@ -135,7 +143,7 @@
         { name: 'Sobrevoo (identificação)', hdg: finalHdg, gs: gs(finalHdg), ref: 'Vertical da UM · ler código ICAO' },
         { name: 'Perna do vento',           hdg: dwHdg,    gs: gsDw,        ref: '1,0 NM de través · até 1,5–1,8 NM GPS' + (minAfterAbeam ? ` (~${minAfterAbeam} min após o través)` : '') },
         { name: 'Base',                     hdg: baseHdg,  gs: gs(baseHdg), ref: 'Curva 90° · bank ≤ 20° · compensar deriva' },
-        { name: 'Final',                    hdg: finalHdg, gs: gs(finalHdg), ref: 'Deslocada — ponto imaginário abeam o deck · no LDP, 45° p/ o pouso' }
+        { name: 'Final',                    hdg: finalHdg, gs: gs(finalHdg), ref: 'Deslocada — abeam o deck · no LDP, 45° p/ o pouso, trajetória contida no SLO e cauda livre' }
       ]
     };
   }
@@ -163,11 +171,14 @@
       if (st.finalManual != null){
         const h = norm(st.finalManual);
         const dev = axisDev(h, st.sloBisector);
+        const inSlo = Math.abs(dev) <= sloWindow(st);
         const c = (st.windFrom != null && st.windKt)
           ? windComp(st.windFrom, st.windKt, h) : { head: 0, cross: 0 };
-        final = { hdg: h, dev, head: c.head, cross: c.cross, manual: true };
+        final = { hdg: h, dev, head: c.head, cross: c.cross, manual: true, inSlo };
         if (Math.abs(dev) > 45)
           alerts.push({ t: 'bad', m: `Proa manual com defasagem de ${Math.abs(Math.round(dev))}° do “H” — acima de 45°. Fora dos limites: descontinuar / novo circuito.` });
+        else if (!inSlo && !seawardOk(h, st))
+          alerts.push({ t: 'bad', m: `Proa manual defasada além dos limites do SLO pelo lado da embarcação — a chegada viria pelo setor de obstáculos. Descontinuar / novo circuito.` });
         if (Math.abs(c.cross) > st.xwindLimit)
           alerts.push({ t: 'bad', m: `Través de ${Math.abs(c.cross).toFixed(0)} kt acima do limite de ${st.xwindLimit} kt na proa manual.` });
       } else {
@@ -236,7 +247,7 @@
       el.resCircuitSub.textContent = `PF no assento ${pf.side === 'esq' ? 'esquerdo' : 'direito'} — deck abeam pelo lado do PF; sentido da final escolhido pelo vento. Avaliar troca PF/PM após o sobrevoo.`;
       el.legsBody.innerHTML = circuit.legs.map(l =>
         `<tr><td>${l.name}</td><td class="hdg">${fmtHdg(l.hdg)}</td><td>${l.gs} kt</td><td class="dim">${l.ref}</td></tr>`).join('');
-      el.gaText.textContent = 'Antes do LDP: RETO EM FRENTE, no prolongamento da final deslocada — escape livre dentro do SLO. Após o LDP: pousar. Curvas de saída conforme briefing, para o lado livre de obstáculos.';
+      el.gaText.textContent = 'Antes do LDP: RETO EM FRENTE, no prolongamento da final deslocada — escape livre dentro do SLO. No LDP: trajetória integralmente dentro do SLO, cauda livre de obstáculos — senão, descontinuar. Após o LDP: pousar.';
     } else {
       el.resCircuit.textContent = '—';
       el.resCircuitSub.textContent = 'Lado das curvas · PF.';
