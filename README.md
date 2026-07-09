@@ -8,9 +8,9 @@ vigentes.
 
 ## O que faz
 
-A partir dos dados da UM (classe e posição do helideque, aproamento,
-orientação do "H" — a bissetriz do SLO, voltada para o mar —, SLO) e do
-vento:
+A partir dos dados da UM (classe e posição do helideque, aproamento da UM,
+aproamento do helideque — a bissetriz do SLO, voltada para o mar; o "H" é
+pintado perpendicular a ela —, SLO) e do vento:
 
 - sugere a **proa de aproximação final** (defasagem máxima de 45° do "H",
   vento de través dentro do limite da aeronave) ou valida uma proa manual;
