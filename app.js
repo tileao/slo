@@ -35,7 +35,7 @@
   /* ---------- leitura do formulário ---------- */
   const $ = id => document.getElementById(id);
   const FIELDS = ['umIcao','deckClass','deckPos','shipHeading','hOrientation','sloAngle',
-                  'sloBisector','finalManual','windFrom','windKt','xwindLimit','pfSide','gaSide'];
+                  'sloBisector','finalManual','windFrom','windKt','xwindLimit'];
 
   function readState(){
     const H = num($('hOrientation').value);
@@ -51,9 +51,7 @@
       finalManual: num($('finalManual').value),
       windFrom: num($('windFrom').value),
       windKt: num($('windKt').value) ?? 0,
-      xwindLimit: num($('xwindLimit').value) ?? 35,
-      pfSide: $('pfSide').value,
-      gaSide: $('gaSide').value
+      xwindLimit: num($('xwindLimit').value) ?? 35
     };
   }
 
@@ -89,6 +87,23 @@
     return 'popa';
   }
 
+  /* lado do PF (= lado do deck na final deslocada), automático:
+     - final defasada além do prolongamento dos limites laterais do SLO
+       (±15° da bissetriz no SLO 210°): a geometria força o deck para o lado
+       oposto à defasagem, mantendo a final deslocada e o escape dentro do setor;
+     - dentro do prolongamento: deck pelo lado de onde vem o través, para que o
+       deslocamento no LDP seja contra o vento e o escape derive para longe da UM;
+     - vento calmo/alinhado: assento direito (perfil normal do RFM). */
+  function autoPfSide(st, final){
+    const bis = st.sloBisector != null ? st.sloBisector : norm(st.H);
+    const win = Math.max(0, st.sloAngle / 2 - 90);
+    const dBis = angDiff(final.hdg, bis);
+    if (dBis > win) return { side: 'esq', why: 'slo' };
+    if (dBis < -win) return { side: 'dir', why: 'slo' };
+    if (Math.abs(final.cross) > 2) return { side: final.cross > 0 ? 'dir' : 'esq', why: 'vento' };
+    return { side: 'dir', why: 'padrao' };
+  }
+
   /* Classe 2 <-> 3 com vento de alheta ou popa */
   function effectiveClass(st){
     const sec = windSector(st);
@@ -100,11 +115,9 @@
     return { cls, changed: false, sec };
   }
 
-  function buildCircuit(finalHdg, st){
-    const side = st.pfSide; // curvas preferencialmente para o lado do PF
+  function buildCircuit(finalHdg, st, side){
     const dwHdg = norm(finalHdg + 180);
     const baseHdg = side === 'esq' ? norm(finalHdg + 90) : norm(finalHdg - 90);
-    const gaSide = st.gaSide === 'auto' ? side : st.gaSide;
     const gs = h => {
       if (st.windFrom == null || !st.windKt) return 80;
       return Math.max(0, Math.round(80 - windComp(st.windFrom, st.windKt, h).head));
@@ -113,12 +126,12 @@
     // través -> início da base (~1,31 NM ao longo da perna p/ dist GPS 1,65 NM)
     const minAfterAbeam = gsDw > 0 ? ((1.31 / gsDw) * 60).toFixed(1).replace('.', ',') : null;
     return {
-      side, gaSide,
+      side,
       legs: [
         { name: 'Sobrevoo (identificação)', hdg: finalHdg, gs: gs(finalHdg), ref: 'Vertical da UM · ler código ICAO' },
         { name: 'Perna do vento',           hdg: dwHdg,    gs: gsDw,        ref: '1,0 NM de través · até 1,5–1,8 NM GPS' + (minAfterAbeam ? ` (~${minAfterAbeam} min após o través)` : '') },
         { name: 'Base',                     hdg: baseHdg,  gs: gs(baseHdg), ref: 'Curva 90° · bank ≤ 20° · compensar deriva' },
-        { name: 'Final',                    hdg: finalHdg, gs: gs(finalHdg), ref: 'Início 1,2–1,5 NM · reduzir p/ 60 kt GS' }
+        { name: 'Final',                    hdg: finalHdg, gs: gs(finalHdg), ref: 'Deslocada — ponto imaginário abeam o deck · no LDP, 45° p/ o pouso' }
       ]
     };
   }
@@ -139,7 +152,7 @@
     const st = readState();
     const alerts = [];
     let status = 'warn', statusText = 'Aguardando briefing';
-    let final = null, circuit = null, cls = effectiveClass(st);
+    let final = null, circuit = null, pf = null, cls = effectiveClass(st);
 
     const ready = st.H != null;
     if (ready){
@@ -161,7 +174,8 @@
     }
 
     if (final){
-      circuit = buildCircuit(final.hdg, st);
+      pf = autoPfSide(st, final);
+      circuit = buildCircuit(final.hdg, st, pf.side);
       if (final.head < -1)
         alerts.push({ t: 'warn', m: `Componente de vento de cauda na final (${Math.abs(final.head).toFixed(0)} kt). Reavaliar proa/perfil.` });
       if (Math.abs(final.cross) > 0.8 * st.xwindLimit && Math.abs(final.cross) <= st.xwindLimit)
@@ -178,12 +192,12 @@
     else if (alerts.some(a => a.t === 'warn')){ status = 'warn'; statusText = 'Briefing com ressalvas'; }
     else { status = 'ok'; statusText = 'Briefing OK'; }
 
-    render(st, final, circuit, cls, alerts, status, statusText);
-    lastResult = { st, final, circuit, cls, alerts, status, statusText };
+    render(st, final, circuit, pf, cls, alerts, status, statusText);
+    lastResult = { st, final, circuit, pf, cls, alerts, status, statusText };
     draw();
   }
 
-  function render(st, final, circuit, cls, alerts, status, statusText){
+  function render(st, final, circuit, pf, cls, alerts, status, statusText){
     el.chip.className = 'status-chip ' + status;
     el.chip.textContent = statusText;
 
@@ -214,10 +228,13 @@
 
     if (circuit){
       el.resCircuit.textContent = circuit.side === 'esq' ? 'Curvas à esquerda' : 'Curvas à direita';
-      el.resCircuitSub.textContent = `UM pelo lado do PF (${st.pfSide === 'esq' ? 'esquerdo' : 'direito'}). Avaliar troca PF/PM após o sobrevoo, se necessário.`;
+      el.resCircuitSub.textContent = `PF no assento ${pf.side === 'esq' ? 'esquerdo' : 'direito'} — ` +
+        (pf.why === 'slo' ? 'defasagem da final força o deck para este lado (SLO).'
+         : pf.why === 'vento' ? `través pela ${final.cross > 0 ? 'direita' : 'esquerda'}: deck e vento pelo lado do PF.`
+         : 'vento calmo/alinhado (perfil normal).') + ' Avaliar troca PF/PM após o sobrevoo.';
       el.legsBody.innerHTML = circuit.legs.map(l =>
         `<tr><td>${l.name}</td><td class="hdg">${fmtHdg(l.hdg)}</td><td>${l.gs} kt</td><td class="dim">${l.ref}</td></tr>`).join('');
-      el.gaText.textContent = `Curva para a ${circuit.gaSide === 'esq' ? 'ESQUERDA' : 'DIREITA'} — lado seguro, afastando dos obstáculos da UM. Confirmar no briefing.`;
+      el.gaText.textContent = 'Antes do LDP: RETO EM FRENTE, no prolongamento da final deslocada — escape livre dentro do SLO. Após o LDP: pousar. Curvas de saída conforme briefing, para o lado livre de obstáculos.';
     } else {
       el.resCircuit.textContent = '—';
       el.resCircuitSub.textContent = 'Lado das curvas · PF.';
@@ -237,14 +254,19 @@
     const offBear = norm(finalHdg + (side === 'esq' ? -90 : 90));
     const o = vec(offBear);
     const D = { e: 0, n: 0 };
+    // final deslocada: trilha passa abeam o deck, com o deck pelo lado do PF
+    const OFF = 0.16;
+    const abeam = pAdd(D, o, -OFF);            // ponto imaginário ao lado do helideque
+    const ldp = pAdd(abeam, f, -OFF);          // deck a 45° do LDP
     return {
-      f, o, D,
-      finalStart: pAdd(D, f, -1.35),
+      f, o, D, abeam, ldp,
+      finalStart: pAdd(abeam, f, -1.35),
+      escEnd:  pAdd(abeam, f, 1.1),            // escape reto em frente
       dwStart: pAdd(pAdd(D, o, 1.0), f, 1.0),
       dwTurn:  pAdd(pAdd(D, o, 1.0), f, -1.25),
       c1:      pAdd(pAdd(D, o, 1.0), f, -1.62),
       baseMid: pAdd(pAdd(D, o, 0.5), f, -1.62),
-      c2:      pAdd(D, f, -1.62),
+      c2:      pAdd(abeam, f, -1.62),
       ovEnd:   pAdd(D, f, 0.95),
       ovC:     pAdd(D, f, 1.45),
       ovC2:    pAdd(pAdd(D, o, 1.0), f, 1.45)
@@ -294,11 +316,11 @@
 
     const st = r.st;
     const finalHdg = r.final ? r.final.hdg : norm(st.H);
-    const side = r.circuit ? r.circuit.side : st.pfSide;
+    const side = r.circuit ? r.circuit.side : 'dir';
     const P = circuitPoints(finalHdg, side);
 
     // enquadramento (inclui posições dos rótulos para nada ficar cortado)
-    const pts = [P.finalStart, P.dwStart, P.dwTurn, P.c1, P.baseMid, P.c2, P.ovEnd, P.ovC, P.ovC2, P.D,
+    const pts = [P.finalStart, P.abeam, P.ldp, P.escEnd, P.dwStart, P.dwTurn, P.c1, P.baseMid, P.c2, P.ovEnd, P.ovC, P.ovC2, P.D,
                  pAdd(pAdd(P.D, P.o, 1.3), P.f, 0.4),
                  pAdd(pAdd(P.D, P.o, 0.5), P.f, -2.0),
                  pAdd(P.finalStart, P.f, -0.4),
@@ -399,8 +421,32 @@
       ctx.lineTo(X(P.dwTurn), Y(P.dwTurn));
       ctx.quadraticCurveTo(X(P.c1), Y(P.c1), X(P.baseMid), Y(P.baseMid));
       ctx.quadraticCurveTo(X(P.c2), Y(P.c2), X(P.finalStart), Y(P.finalStart));
-      ctx.lineTo(X(P.D), Y(P.D));
+      ctx.lineTo(X(P.ldp), Y(P.ldp));
+      ctx.lineTo(X(P.D), Y(P.D)); // deslocamento de 45° do LDP para o pouso
       ctx.stroke();
+
+      // escape reto em frente (arremetida antes do LDP)
+      ctx.setLineDash([5, 6]);
+      ctx.strokeStyle = 'rgba(232,184,75,.75)';
+      ctx.beginPath();
+      ctx.moveTo(X(P.ldp), Y(P.ldp));
+      ctx.lineTo(X(P.escEnd), Y(P.escEnd));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.save();
+      ctx.translate(X(P.escEnd), Y(P.escEnd));
+      ctx.rotate(rad(finalHdg));
+      ctx.fillStyle = 'rgba(232,184,75,.85)';
+      ctx.beginPath();
+      ctx.moveTo(0, -7); ctx.lineTo(5, 5); ctx.lineTo(-5, 5);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+
+      // LDP
+      ctx.beginPath();
+      ctx.arc(X(P.ldp), Y(P.ldp), 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#e8b84b';
+      ctx.fill();
 
       // sobrevoo -> perna do vento (tracejado)
       ctx.setLineDash([5, 6]);
@@ -439,6 +485,8 @@
       label(pAdd(pAdd(P.D, P.o, 1.14), P.f, 0.25), 'Vento ' + fmtHdg(dwHdg));
       label(pAdd(pAdd(P.D, P.o, 0.5), P.f, -1.85), 'Base 1,5–1,8 NM');
       label(pAdd(P.finalStart, P.f, -0.22), 'Final ' + fmtHdg(finalHdg));
+      label(pAdd(P.ldp, P.o, -0.24), 'LDP', '#e8b84b');
+      label(pAdd(P.escEnd, P.f, 0.22), 'Escape', 'rgba(232,184,75,.85)');
       label(pAdd(pAdd(P.D, P.o, 0.55), P.f, -0.12), '1,0 NM', 'rgba(157,176,196,.8)');
       // linha do través
       ctx.setLineDash([2, 4]);
@@ -544,7 +592,8 @@
         <li>Vento na final: ${Math.abs(r.final.head).toFixed(0)} kt de ${r.final.head >= 0 ? 'proa' : 'cauda'} ·
             ${Math.abs(r.final.cross).toFixed(0)} kt de través (limite ${st.xwindLimit} kt)</li>
         <li>Circuito: curvas à ${r.circuit.side === 'esq' ? 'esquerda' : 'direita'} · 500 ft RADALT · 80 KIAS</li>
-        <li>Arremetida: curva para a ${r.circuit.gaSide === 'esq' ? 'esquerda' : 'direita'} — reiterar na perna do vento</li>
+        <li>Arremetida antes do LDP: reto em frente, no prolongamento da final deslocada — reiterar na perna do vento</li>
+        <li>PF no assento ${r.circuit.side === 'esq' ? 'esquerdo' : 'direito'} — deck pelo lado do PF</li>
         <li>Estabilizada antes de 0,5 NM · final 75–85 kt · descida ≤500 ft/min abaixo de 500 ft · ≤350 ft/min no segmento final</li>
       </ul>
       <img src="${img}" alt="Diagrama do circuito">
