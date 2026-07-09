@@ -10,10 +10,15 @@ vigentes.
 
 A partir dos dados da UM (classe e posição do helideque, aproamento da UM,
 aproamento do helideque — a bissetriz do SLO, voltada para o mar; o "H" é
-pintado perpendicular a ela —, SLO) e do vento:
+pintado perpendicular a ela; derivado automaticamente da posição (proa =
+aproamento da UM; popa = recíproca) e informado manualmente apenas em decks
+deslocados —, SLO) e do vento:
 
-- sugere a **proa de aproximação final** (defasagem máxima de 45° do "H",
-  vento de través dentro do limite da aeronave) ou valida uma proa manual;
+- sugere a **proa de aproximação final** — a princípio aproada ao vento,
+  quando a chegada vem por dentro do SLO; fora disso considera as
+  componentes (través no limite, sem cauda) e, em último caso, as
+  tolerâncias de 30° além dos limites laterais (45° do "H") — ou valida
+  uma proa manual;
 - calcula componentes de **vento de proa e través** na final;
 - aplica a **reclassificação da classe do helideque** com vento de alheta/popa;
 - escolhe o **lado do PF automaticamente** (vento de través e geometria do
