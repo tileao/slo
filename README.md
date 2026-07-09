@@ -15,8 +15,11 @@ orientação do "H", SLO) e do vento:
   vento de través dentro do limite da aeronave) ou valida uma proa manual;
 - calcula componentes de **vento de proa e través** na final;
 - aplica a **reclassificação da classe do helideque** com vento de alheta/popa;
-- monta o **circuito de tráfego** (lado das curvas pelo lado do PF, proas das
+- escolhe o **lado do PF automaticamente** (vento de través e geometria do
+  SLO) e monta o **circuito de tráfego** (curvas pelo lado do PF, proas das
   pernas, GS estimada, distâncias de referência, 500 ft RADALT / 80 KIAS);
+- desenha a **final deslocada** para o ponto imaginário abeam o helideque,
+  com LDP (deslocamento de 45° para o pouso) e escape reto em frente;
 - define o **plano de arremetida** e exibe cartões de referência
   (aproximação estabilizada, comunicações e checklists);
 - desenha o **diagrama do circuito** (UM, SLO, vento e pernas) em canvas,
