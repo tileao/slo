@@ -1,4 +1,4 @@
-const CACHE = 'slo-circuito-offshore-v1';
+const CACHE = 'slo-circuito-offshore-v4';
 const PRECACHE = [
   './',
   './index.html',
@@ -12,7 +12,10 @@ const PRECACHE = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting()));
+  // cache: 'reload' evita precache de versões velhas vindas do cache HTTP
+  e.waitUntil(caches.open(CACHE)
+    .then(c => c.addAll(PRECACHE.map(u => new Request(u, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
