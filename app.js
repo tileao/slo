@@ -58,7 +58,7 @@
       finalManual: num($('finalManual').value),
       windFrom: num($('windFrom').value),
       windKt: num($('windKt').value) ?? 0,
-      xwindLimit: num($('xwindLimit').value) ?? 35
+      xwindLimit: num($('xwindLimit').value) ?? 20
     };
   }
 
@@ -90,10 +90,20 @@
     return 'proibida';
   }
 
+  /* Limites de vento do AW139 na final: través máximo de 20 kt e, acima de
+     10 kt de través, exigência de pelo menos 5 kt de componente de proa. */
+  const XWIND_HEADWIND_RULE = { crossThresholdKt: 10, minHeadwindKt: 5 };
+
+  function violatesXwindRule(c){
+    return Math.abs(c.cross) > XWIND_HEADWIND_RULE.crossThresholdKt &&
+           c.head < XWIND_HEADWIND_RULE.minHeadwindKt;
+  }
+
   /* proa final sugerida:
      1) a princípio, aproada ao vento — se a chegada vier por dentro do SLO;
      2) fora disso, considerar as componentes: melhor proa por dentro do SLO
-        com través no limite e sem componente de cauda;
+        com través no limite (e proa mínima de 5 kt quando o través passa de
+        10 kt) e sem componente de cauda;
      3) em último caso, as tolerâncias (30° além dos limites) e, só então,
         proas com vento de cauda. Vento calmo → eixo do "H". */
   function suggestFinal(st){
@@ -113,6 +123,7 @@
       if (band === 'proibida') continue;
       const c = windComp(st.windFrom, st.windKt, h);
       if (Math.abs(c.cross) > st.xwindLimit) continue;
+      if (violatesXwindRule(c)) continue;
       const t = band === 'dentro' ? (c.head > -1 ? 0 : 2) : (c.head > -1 ? 1 : 3);
       const dev = axisDev(h, bis);
       const score = c.head - 0.05 * Math.abs(dev); // eixo do "H" só como desempate
@@ -208,7 +219,7 @@
       } else {
         final = suggestFinal(st);
         if (!final)
-          alerts.push({ t: 'bad', m: `Nenhuma proa permitida pelo SLO mantém o través dentro de ${st.xwindLimit} kt. Aproximação inviável — reavaliar.` });
+          alerts.push({ t: 'bad', m: `Nenhuma proa permitida pelo SLO fecha os limites de vento (través ≤ ${st.xwindLimit} kt e, acima de 10 kt de través, proa mínima de 5 kt). Aproximação inviável — reavaliar.` });
       }
     }
 
@@ -219,6 +230,10 @@
         alerts.push({ t: 'warn', m: `Componente de vento de cauda na final (${Math.abs(final.head).toFixed(0)} kt). Reavaliar proa/perfil.` });
       if (Math.abs(final.cross) > 0.8 * st.xwindLimit && Math.abs(final.cross) <= st.xwindLimit)
         alerts.push({ t: 'warn', m: `Través de ${Math.abs(final.cross).toFixed(0)} kt — próximo do limite de ${st.xwindLimit} kt.` });
+      if (violatesXwindRule(final))
+        alerts.push({ t: 'bad', m: `Través de ${Math.abs(final.cross).toFixed(0)} kt (acima de 10 kt) exige pelo menos 5 kt de componente de proa — esta proa tem ${final.head.toFixed(0)} kt.` });
+      else if (Math.abs(final.cross) > XWIND_HEADWIND_RULE.crossThresholdKt)
+        alerts.push({ t: 'info', m: `Través de ${Math.abs(final.cross).toFixed(0)} kt (acima de 10 kt): exigência de ≥ 5 kt de proa atendida (${final.head.toFixed(0)} kt).` });
       if (final.band === 'tolerada' && !final.manual)
         alerts.push({ t: 'warn', m: `Final além dos limites laterais do SLO (tolerância de 30° = 45° do “H”) para manter o través nos limites — segmento pós-LDP integralmente dentro do SLO.` });
     }
@@ -271,6 +286,8 @@
     el.resClassSub.textContent = cls.changed
       ? `Reclassificado (era Classe ${st.deckClass}) — vento de ${cls.sec}.`
       : (cls.sec ? `Vento de ${cls.sec} — sem reclassificação.` : 'Sem dados de vento/aproamento.');
+
+    renderDeckWx(cls);
 
     if (circuit){
       el.resCircuit.textContent = circuit.side === 'esq' ? 'Curvas à esquerda' : 'Curvas à direita';
@@ -604,6 +621,134 @@
     ctx.fillText('Fora de escala — apenas orientação espacial', cssW - 10, cssH - 14);
   }
 
+  /* ---------- integração com o módulo Pesos (contexto compartilhado) ---------- */
+  const DECK_LIMITS_DAY = {
+    '1': { rollPitchDeg: 4, incDeg: 4.5, heaveRateMs: 1.3, heaveM: 5.0 },
+    '2': { rollPitchDeg: 3, incDeg: 3.5, heaveRateMs: 1.0, heaveM: 3.0 },
+    '3': { rollPitchDeg: 3, incDeg: 3.5, heaveRateMs: 1.0, heaveM: 3.0 }
+  };
+
+  let pesoWx = null;      // weather importado do módulo Pesos (perna crítica ou chip clicado)
+  let pesoWxLabel = null; // destino/UM a que esse weather se refere
+
+  function loadSharedCtx(){
+    try { return JSON.parse(localStorage.getItem(CTX_KEY) || '{}'); } catch (e) { return {}; }
+  }
+
+  function pesoCriticalLeg(ctx){
+    const list = ctx.pesoWeatherPorPerna;
+    if (!Array.isArray(list) || !list.length) return null;
+    const idx = ctx.pesoPernaCritica != null ? ctx.pesoPernaCritica - 1 : 0;
+    return list[idx] || list[0];
+  }
+
+  function setFieldIfEmpty(id, val){
+    const node = $(id);
+    if (!node || val == null || val === '' || node.value) return;
+    node.value = val;
+    node.dispatchEvent(new Event('input', { bubbles: true }));
+    node.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  /* preenchimento explícito (clique no chip da rota) sobrescreve o campo */
+  function setFieldForce(id, val){
+    const node = $(id);
+    if (!node || val == null || val === '') return;
+    node.value = val;
+    node.dispatchEvent(new Event('input', { bubbles: true }));
+    node.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function applyPesoLeg(leg, force){
+    const wx = leg && leg.weather;
+    if (!wx || wx.type !== 'um') return;
+    pesoWx = wx;
+    pesoWxLabel = leg.destino || null;
+    const set = force ? setFieldForce : setFieldIfEmpty;
+    set('umIcao', leg.destino);
+    set('shipHeading', num(wx.aproamento));
+    if (wx.vento){
+      const parts = String(wx.vento).split('/');
+      set('windFrom', num(parts[0]));
+      set('windKt', num(parts[1]));
+    }
+    if (force) evaluate();
+  }
+
+  // Chips com as UMs da rota do Pesos: clicar importa o deque daquela
+  // localidade (o wx de cada perna no Pesos é o do destino/pouso).
+  function addPesoRouteChips(ctx){
+    const legs = ctx.pesoPernas || ctx.pesoWeatherPorPerna;
+    const umLegs = Array.isArray(legs) ? legs.filter(l => l.weather && l.weather.type === 'um') : [];
+    const form = document.querySelector('.entry-panel form');
+    if (!form) return;
+    const strip = document.createElement('div');
+    strip.id = 'pesoRouteChips';
+    // Sem dados, vira um aviso do que falta — dá para ver que a integração
+    // está ativa e o motivo de não haver chips.
+    const hint = !Array.isArray(legs) || !legs.length
+      ? '<span class="chips-hint">Sem voo publicado — calcule a rota no Planejamento do Voo.</span>'
+      : '<span class="chips-hint">Preencha o WX das UMs no Planejamento do Voo para importar.</span>';
+    strip.innerHTML = '<span class="chips-label">Helideques da rota (Voo)</span>' +
+      (umLegs.length
+        ? umLegs.map(l => `<button type="button" data-perna="${l.perna}" title="Perna ${l.perna} — pouso em ${l.destino}">${l.destino}</button>`).join('')
+        : hint);
+    strip.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-perna]');
+      if (!btn) return;
+      const leg = umLegs.find(l => String(l.perna) === btn.dataset.perna);
+      if (!leg) return;
+      applyPesoLeg(leg, true);
+      strip.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+    });
+    form.parentElement.insertBefore(strip, form);
+  }
+
+  // Preenche uma única vez, no carregamento, os campos ainda vazios com os
+  // dados de weather da perna crítica calculada pelo módulo Pesos, e monta
+  // os chips de importação por localidade.
+  function importFromPesosOnce(){
+    const ctx = loadSharedCtx();
+    addPesoRouteChips(ctx);
+    const leg = pesoCriticalLeg(ctx);
+    const wx = leg && leg.weather;
+    pesoWx = wx || null;
+    if (!wx || wx.type !== 'um') return;
+    applyPesoLeg(leg, false);
+  }
+
+  function renderDeckWx(cls){
+    const box = $('deckWxPanel');
+    if (!box) return;
+    if (!pesoWx || pesoWx.type !== 'um'){ box.hidden = true; return; }
+    box.hidden = false;
+    const lim = DECK_LIMITS_DAY[cls.cls] || DECK_LIMITS_DAY['3'];
+    const rows = [
+      ['Pitch', pesoWx.pitch, '°', lim.rollPitchDeg],
+      ['Roll', pesoWx.roll, '°', lim.rollPitchDeg],
+      ['Heave', pesoWx.heave, 'm', lim.heaveM],
+      ['Heave rate', pesoWx.heaveRate, 'm/s', lim.heaveRateMs],
+      ['Inclinação', pesoWx.inclinacao, '°', lim.incDeg]
+    ];
+    const title = box.querySelector('.deck-wx-title');
+    if (title) title.textContent = 'Movimento do deque — ' + (pesoWxLabel ? pesoWxLabel + ' · ' : '') + 'via Planejamento do Voo';
+    const overLimit = [];
+    box.querySelector('.deck-wx-grid').innerHTML = rows.map(([label, val, unit, max]) => {
+      const n = num(val);
+      const over = n != null && Math.abs(n) > max;
+      if (over) overLimit.push(label);
+      const shown = (val != null && val !== '') ? String(val).replace('.', ',') + ' ' + unit : '—';
+      return `<div class="deck-wx-item${over ? ' over' : ''}"><span class="deck-wx-label">${label}</span><span class="deck-wx-val">${shown}</span></div>`;
+    }).join('');
+    const statusBad = pesoWx.statusLight === 'vermelho' || pesoWx.helideckOk === 'nao';
+    const notes = [];
+    if (statusBad) notes.push('Status Light vermelha / helideque não guarnecido e liberado — arremetida obrigatória.');
+    if (overLimit.length) notes.push(`Fora do limite diurno da Classe ${cls.cls}: ${overLimit.join(', ')}.`);
+    if (!notes.length) notes.push(`Dentro dos limites diurnos da Classe ${cls.cls}.`);
+    box.querySelector('.deck-wx-note').textContent = notes.join(' ');
+    box.classList.toggle('deck-wx-alert', statusBad || overLimit.length > 0);
+  }
+
   /* ---------- contexto compartilhado (integração futura) ---------- */
   function saveSharedContext(){
     if (!lastResult || !lastResult.final) return;
@@ -698,7 +843,7 @@
     FIELDS.forEach(id => {
       const node = $(id);
       if (node.tagName === 'SELECT') node.selectedIndex = id === 'deckPos' ? 1 : 0;
-      else node.value = id === 'xwindLimit' ? '35' : '';
+      else node.value = id === 'xwindLimit' ? '20' : '';
     });
     try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
     evaluate();
@@ -710,6 +855,7 @@
   if (params.has('back') || params.has('return')){
     const back = $('backBtn');
     back.hidden = false;
+    document.body.classList.add('has-back-btn');
     back.addEventListener('click', (e) => {
       e.preventDefault();
       const ret = params.get('return');
@@ -726,5 +872,8 @@
   }
 
   loadForm();
+  // migra o default antigo salvo (35 kt) para o limite real do AW139
+  if ($('xwindLimit').value === '35') $('xwindLimit').value = '20';
+  importFromPesosOnce();
   evaluate();
 })();

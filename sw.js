@@ -1,4 +1,5 @@
-const CACHE = 'slo-circuito-offshore-v12';
+// Bump a versão a cada release para invalidar caches antigos.
+const CACHE = 'slo-circuito-offshore-v20';
 const PRECACHE = [
   './',
   './index.html',
@@ -8,7 +9,9 @@ const PRECACHE = [
   './assets/icon-32.png',
   './assets/icon-180.png',
   './assets/icon-192.png',
-  './assets/icon-512.png'
+  './assets/icon-512.png',
+  'shared/pwa.css',
+  'shared/pwa.js'
 ];
 
 self.addEventListener('install', (e) => {
@@ -21,20 +24,38 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k.startsWith('slo-circuito-offshore-') && k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
-self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request, { ignoreSearch: true }).then(hit =>
-      hit || fetch(e.request).then(res => {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, copy));
-        return res;
-      }).catch(() => caches.match('./index.html'))
-    )
-  );
+// Stale-while-revalidate: responde do cache na hora (app instantâneo) e
+// atualiza o cache em segundo plano — a versão nova chega na abertura
+// seguinte.
+self.addEventListener('fetch', function (event) {
+  var request = event.request;
+  if (request.method !== 'GET') return;
+  var url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
+
+  event.respondWith((async function () {
+    var cached = await caches.match(request, { ignoreSearch: true });
+    var refresh = fetch(request).then(function (fresh) {
+      if (fresh && fresh.ok) {
+        caches.open(CACHE).then(function (cache) { cache.put(request, fresh.clone()); });
+      }
+      return fresh;
+    }).catch(function () { return null; });
+    if (cached) {
+      event.waitUntil(refresh);
+      return cached;
+    }
+    var fresh = await refresh;
+    if (fresh) return fresh;
+    if (request.mode === 'navigate') {
+      var offline = await caches.match('./index.html', { ignoreSearch: true });
+      if (offline) return offline;
+    }
+    return Response.error();
+  })());
 });
