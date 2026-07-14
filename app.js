@@ -35,7 +35,7 @@
   /* ---------- leitura do formulário ---------- */
   const $ = id => document.getElementById(id);
   const FIELDS = ['umIcao','deckClass','deckPos','shipHeading','sloAngle',
-                  'sloBisector','finalManual','windFrom','windKt','xwindLimit'];
+                  'sloBisector','arrivalHdg','finalManual','windFrom','windKt','xwindLimit'];
 
   function readState(){
     const bisIn = num($('sloBisector').value);
@@ -55,6 +55,7 @@
       shipHeading: ship,
       sloAngle: Number($('sloAngle').value),
       sloBisector, bisAuto,
+      arrivalHdg: num($('arrivalHdg').value),
       finalManual: num($('finalManual').value),
       windFrom: num($('windFrom').value),
       windKt: num($('windKt').value) ?? 0,
@@ -172,10 +173,16 @@
     const gsDw = gs(dwHdg);
     // través -> início da base (~1,31 NM ao longo da perna p/ dist GPS 1,65 NM)
     const minAfterAbeam = gsDw > 0 ? ((1.31 / gsDw) * 60).toFixed(1).replace('.', ',') : null;
+    // sobrevoo de reconhecimento: na proa de chegada da rota (quando informada),
+    // com a UM pelo lado do PF; depois, curva de entrada na perna do vento
+    const ovHdg = st.arrivalHdg != null ? norm(st.arrivalHdg) : finalHdg;
+    const arrival = st.arrivalHdg != null
+      ? { hdg: ovHdg, turn: angDiff(dwHdg, ovHdg) >= 0 ? 'direita' : 'esquerda' }
+      : null;
     return {
-      side,
+      side, arrival,
       legs: [
-        { name: 'Sobrevoo (identificação)', hdg: finalHdg, gs: gs(finalHdg), ref: 'Vertical da UM · ler código ICAO' },
+        { name: 'Sobrevoo (identificação)', hdg: ovHdg, gs: gs(ovHdg), ref: 'UM pelo lado do PF · PF lê o código ICAO / PM coteja' },
         { name: 'Perna do vento',           hdg: dwHdg,    gs: gsDw,        ref: '1,0 NM de través · até 1,5–1,8 NM GPS' + (minAfterAbeam ? ` (~${minAfterAbeam} min após o través)` : '') },
         { name: 'Base',                     hdg: baseHdg,  gs: gs(baseHdg), ref: 'Curva 90° · bank ≤ 20° · compensar deriva' },
         { name: 'Final',                    hdg: finalHdg, gs: gs(finalHdg), ref: 'Deslocada — abeam o deck · no LDP, 45° p/ o pouso, trajetória contida no SLO e cauda livre' }
@@ -291,7 +298,9 @@
 
     if (circuit){
       el.resCircuit.textContent = circuit.side === 'esq' ? 'Curvas à esquerda' : 'Curvas à direita';
-      el.resCircuitSub.textContent = `PF no assento ${pf.side === 'esq' ? 'esquerdo' : 'direito'} — deck abeam pelo lado do PF; sentido da final escolhido pelo vento. Avaliar troca PF/PM após o sobrevoo.`;
+      el.resCircuitSub.textContent = circuit.arrival
+        ? `PF no assento ${pf.side === 'esq' ? 'esquerdo' : 'direito'} — sobrevoo ${fmtHdg(circuit.arrival.hdg)} com a UM pelo lado do PF: PF identifica (lê o ICAO), PM coteja. Entrada no vento por curva à ${circuit.arrival.turn}.`
+        : `PF no assento ${pf.side === 'esq' ? 'esquerdo' : 'direito'} — deck abeam pelo lado do PF; sentido da final escolhido pelo vento. Avaliar troca PF/PM após o sobrevoo.`;
       el.legsBody.innerHTML = circuit.legs.map(l =>
         `<tr><td>${l.name}</td><td class="hdg">${fmtHdg(l.hdg)}</td><td>${l.gs} kt</td><td class="dim">${l.ref}</td></tr>`).join('');
       el.gaText.textContent = 'Antes do LDP: RETO EM FRENTE, no prolongamento da final deslocada — escape livre dentro do SLO. No LDP: trajetória integralmente dentro do SLO, cauda livre de obstáculos — senão, descontinuar. Após o LDP: pousar.';
@@ -380,7 +389,17 @@
     const P = circuitPoints(finalHdg, side);
 
     // enquadramento (inclui posições dos rótulos para nada ficar cortado)
+    // pontos do sobrevoo de reconhecimento (quando a proa de chegada é informada)
+    if (st.arrivalHdg != null){
+      const ah = norm(st.arrivalHdg);
+      const av = vec(ah);
+      const ao = vec(norm(ah + (side === 'dir' ? -90 : 90)));
+      P.arrAbeam = pAdd(P.D, ao, 0.3);
+      P.arrStart = pAdd(P.arrAbeam, av, -2.0);
+      P.arrEnd = pAdd(P.arrAbeam, av, 0.9);
+    }
     const pts = [P.finalStart, P.abeam, P.ldp, P.escEnd, P.dwStart, P.dwTurn, P.c1, P.baseMid, P.c2, P.ovEnd, P.ovC, P.ovC2, P.D,
+                 ...(P.arrStart ? [P.arrStart, P.arrEnd, pAdd(P.arrStart, vec(norm(st.arrivalHdg)), -0.45)] : []),
                  pAdd(pAdd(P.D, P.o, 1.3), P.f, 0.4),
                  pAdd(pAdd(P.D, P.o, 0.5), P.f, -2.0),
                  pAdd(P.finalStart, P.f, -0.4),
@@ -533,16 +552,56 @@
       ctx.fillStyle = '#e8b84b';
       ctx.fill();
 
-      // sobrevoo -> perna do vento (tracejado)
+      // sobrevoo de reconhecimento -> perna do vento (tracejado)
       ctx.setLineDash([5, 6]);
       ctx.strokeStyle = 'rgba(70,194,186,.5)';
       ctx.beginPath();
-      ctx.moveTo(X(pAdd(P.D, P.f, -0.35)), Y(pAdd(P.D, P.f, -0.35)));
-      ctx.lineTo(X(P.ovEnd), Y(P.ovEnd));
-      ctx.quadraticCurveTo(X(P.ovC), Y(P.ovC), X(pAdd(P.ovC2, P.f, -0.2)), Y(pAdd(P.ovC2, P.f, -0.2)));
-      ctx.lineTo(X(P.dwStart), Y(P.dwStart));
-      ctx.stroke();
-      ctx.setLineDash([]);
+      if (st.arrivalHdg != null){
+        // chegada na proa da rota, deslocada p/ manter a UM do lado do PF
+        const ah = norm(st.arrivalHdg);
+        const av = vec(ah);
+        const ao = vec(norm(ah + (side === 'dir' ? -90 : 90)));
+        const abeamId = P.arrAbeam; // través da UM — identificação
+        const arrStart = P.arrStart;
+        const arrEnd = P.arrEnd;
+        ctx.moveTo(X(arrStart), Y(arrStart));
+        ctx.lineTo(X(arrEnd), Y(arrEnd));
+        // entrada: intercepta a perna do vento no ponto natural (projeção)
+        const dwBase = pAdd(P.D, P.o, 1.0);
+        const relE = arrEnd.e - dwBase.e, relN = arrEnd.n - dwBase.n;
+        const k = Math.max(-0.9, Math.min(0.9, relE * P.f.e + relN * P.f.n));
+        const jp = pAdd(dwBase, P.f, k);
+        ctx.quadraticCurveTo(X(pAdd(arrEnd, av, 0.7)), Y(pAdd(arrEnd, av, 0.7)), X(jp), Y(jp));
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // seta e rótulos da chegada
+        ctx.save();
+        ctx.translate(X(pAdd(abeamId, av, -1.0)), Y(pAdd(abeamId, av, -1.0)));
+        ctx.rotate(rad(ah));
+        ctx.fillStyle = 'rgba(70,194,186,.7)';
+        ctx.beginPath();
+        ctx.moveTo(0, -7); ctx.lineTo(5, 5); ctx.lineTo(-5, 5);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+        ctx.fillStyle = 'rgba(229,238,248,.85)';
+        ctx.font = '700 11px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Chegada ' + fmtHdg(ah), X(pAdd(arrStart, av, -0.22)), Y(pAdd(arrStart, av, -0.22)));
+        ctx.beginPath();
+        ctx.arc(X(abeamId), Y(abeamId), 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(70,194,186,.9)';
+        ctx.fill();
+        ctx.fillStyle = 'rgba(70,194,186,.9)';
+        ctx.font = '700 10px Inter, sans-serif';
+        ctx.fillText('ID — PF', X(pAdd(abeamId, ao, 0.3)), Y(pAdd(abeamId, ao, 0.3)));
+      } else {
+        ctx.moveTo(X(pAdd(P.D, P.f, -0.35)), Y(pAdd(P.D, P.f, -0.35)));
+        ctx.lineTo(X(P.ovEnd), Y(P.ovEnd));
+        ctx.quadraticCurveTo(X(P.ovC), Y(P.ovC), X(pAdd(P.ovC2, P.f, -0.2)), Y(pAdd(P.ovC2, P.f, -0.2)));
+        ctx.lineTo(X(P.dwStart), Y(P.dwStart));
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
       ctx.lineWidth = 1;
 
       // setas de sentido
