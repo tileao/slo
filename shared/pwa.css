@@ -1,0 +1,133 @@
+
+:root{
+  --pwa-safe-top: env(safe-area-inset-top, 0px);
+  --pwa-safe-right: env(safe-area-inset-right, 0px);
+  --pwa-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --pwa-safe-left: env(safe-area-inset-left, 0px);
+}
+html, body { min-height: 100%; }
+body { min-height: 100svh; }
+body.is-standalone { overscroll-behavior-y: contain; }
+body.is-standalone .home-shell,
+body.is-standalone .cockpit-shell,
+body.is-standalone .app-shell,
+body.is-standalone .shell,
+body.is-standalone .workspace {
+  padding-bottom: max(16px, var(--pwa-safe-bottom));
+}
+body.is-standalone .home-topbar,
+body.is-standalone .topbar,
+body.is-standalone .module-topbar,
+body.is-standalone .adc-module-topbar {
+  padding-top: max(8px, calc(var(--pwa-safe-top) + 4px));
+}
+.pwa-launch-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at top, rgba(46, 135, 129, .22), transparent 40%), linear-gradient(180deg, #07111b 0%, #0b1220 100%);
+  opacity: 1;
+  transition: opacity .22s ease;
+}
+.pwa-launch-mask.is-hiding { opacity: 0; pointer-events: none; }
+.pwa-launch-card {
+  width: min(280px, calc(100vw - 40px));
+  padding: 22px 20px 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(9, 16, 27, .86);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 20px 44px rgba(0,0,0,.36);
+  text-align: center;
+  color: #e8eef7;
+}
+.pwa-launch-icon {
+  width: 68px; height: 68px; margin: 0 auto 14px; border-radius: 18px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,.12); box-shadow: 0 12px 28px rgba(0,0,0,.28);
+}
+.pwa-launch-icon img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.pwa-launch-title { font-size: 18px; font-weight: 800; letter-spacing: .02em; }
+.pwa-launch-subtitle { margin-top: 6px; color: #9fb1c6; font-size: 13px; }
+.pwa-toast-text strong { color: #f3f7fb; }
+.pwa-network-chip {
+  position: fixed;
+  right: max(12px, var(--pwa-safe-right));
+  top: max(12px, calc(var(--pwa-safe-top) + 8px));
+  z-index: 9998;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(9, 16, 27, .86);
+  color: #d9e4ef;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 24px rgba(0,0,0,.28);
+}
+.pwa-network-chip[hidden] { display: none !important; }
+.pwa-network-chip::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #2dc97a;
+  box-shadow: 0 0 0 4px rgba(45,201,122,.16);
+}
+.pwa-network-chip.offline::before {
+  background: #f3b447;
+  box-shadow: 0 0 0 4px rgba(243,180,71,.18);
+}
+@media (max-width: 760px) {
+  .pwa-launch-card { width: min(260px, calc(100vw - 32px)); }
+}
+
+body:not(.pwa-shell-ready) .home-shell,
+body:not(.pwa-shell-ready) .app-shell,
+body:not(.pwa-shell-ready) .cockpit-shell,
+body:not(.pwa-shell-ready) .shell {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.home-shell,
+.app-shell,
+.cockpit-shell,
+.shell {
+  transition: opacity .24s ease, transform .24s ease;
+}
+body.pwa-shell-ready .home-shell,
+body.pwa-shell-ready .app-shell,
+body.pwa-shell-ready .cockpit-shell,
+body.pwa-shell-ready .shell {
+  opacity: 1;
+  transform: none;
+}
+body.is-standalone .home-topbar,
+body.is-standalone .topbar,
+body.is-standalone .module-topbar,
+body.is-standalone .adc-module-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 90;
+}
+body.is-standalone.is-scrolled .home-topbar,
+body.is-standalone.is-scrolled .topbar,
+body.is-standalone.is-scrolled .module-topbar,
+body.is-standalone.is-scrolled .adc-module-topbar {
+  box-shadow: 0 16px 34px rgba(0,0,0,.24);
+  border-color: rgba(255,255,255,.14);
+  background: rgba(11,18,32,.92);
+}
+body.is-standalone .home-shell,
+body.is-standalone .app-shell,
+body.is-standalone .cockpit-shell,
+body.is-standalone .shell {
+  padding-left: max(12px, var(--pwa-safe-left));
+  padding-right: max(12px, var(--pwa-safe-right));
+}

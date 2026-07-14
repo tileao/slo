@@ -12,12 +12,13 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="assets/icon-180.png">
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="shared/pwa.css">
 </head>
 <body>
 <main class="cockpit-shell">
+  <a id="backBtn" class="nav-btn" href="#" hidden aria-label="Voltar">⥢</a>
   <header class="topbar slim-topbar">
     <div class="topbar-left">
-      <a id="backBtn" class="nav-btn" href="#" hidden aria-label="Voltar">⥢</a>
       <div class="product-tag">
         <div class="product-icon"><img src="assets/icon-192.png" alt=""></div>
         <div>
@@ -91,7 +92,7 @@
               <input id="windKt" type="number" inputmode="numeric" enterkeyhint="next" min="0" max="99" placeholder="0">
             </label>
             <label class="field"><span>Limite de través (kt)</span>
-              <input id="xwindLimit" type="number" inputmode="numeric" enterkeyhint="done" min="1" max="60" value="35">
+              <input id="xwindLimit" type="number" inputmode="numeric" enterkeyhint="done" min="1" max="60" value="20">
             </label>
           </div>
 
@@ -113,6 +114,12 @@
         </div>
 
         <div id="alerts" class="alerts"></div>
+
+        <div class="panel deck-wx-panel" id="deckWxPanel" hidden>
+          <div class="deck-wx-title">Movimento do deque — via Planejamento do Voo</div>
+          <div class="deck-wx-grid"></div>
+          <div class="deck-wx-note"></div>
+        </div>
 
         <div class="result-grid">
           <div class="result-box">
@@ -214,5 +221,6 @@
 <div id="printArea" class="print-area" aria-hidden="true"></div>
 
 <script src="app.js"></script>
+<script src="shared/pwa.js"></script>
 </body>
 </html>
