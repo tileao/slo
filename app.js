@@ -404,19 +404,12 @@
       const arr = r.circuit.arrival;
       const av = vec(arr.hdg);
       const ao = vec(arr.passBear); // deslocamento p/ o bordo do helideque (mar)
-      const eo = vec(arr.entryHdg);
       P.arrAbeam = pAdd(P.D, ao, 0.3);
       P.arrStart = pAdd(P.arrAbeam, av, -2.0);
-      P.arrEnd = pAdd(P.arrAbeam, av, 0.9);
-      // curva p/ a proa de entrada e interceptação da perna do vento a 90°
-      P.entryTurn = pAdd(pAdd(P.arrEnd, av, 0.45), eo, 0.45);
-      const s = 1.0 - ((P.entryTurn.e - P.D.e) * P.o.e + (P.entryTurn.n - P.D.n) * P.o.n);
-      P.entryJoin = pAdd(P.entryTurn, eo, Math.max(0.15, s));
-      P.entryEnd = pAdd(P.entryJoin, P.f, -0.4); // segue na perna do vento
+      P.arrEnd = pAdd(P.arrAbeam, av, 1.1);
     }
     const pts = [P.finalStart, P.abeam, P.ldp, P.escEnd, P.dwStart, P.dwTurn, P.c1, P.baseMid, P.c2, P.ovEnd, P.ovC, P.ovC2, P.D,
-                 ...(P.arrStart ? [P.arrStart, P.arrEnd, P.entryTurn, P.entryJoin, P.entryEnd,
-                                   pAdd(P.arrStart, vec(norm(st.arrivalHdg)), -0.45)] : []),
+                 ...(P.arrStart ? [P.arrStart, P.arrEnd, pAdd(P.arrStart, vec(norm(st.arrivalHdg)), -0.45)] : []),
                  pAdd(pAdd(P.D, P.o, 1.3), P.f, 0.4),
                  pAdd(pAdd(P.D, P.o, 0.5), P.f, -2.0),
                  pAdd(P.finalStart, P.f, -0.4),
@@ -582,16 +575,7 @@
         const abeamId = P.arrAbeam; // través da UM — identificação
         ctx.moveTo(X(P.arrStart), Y(P.arrStart));
         ctx.lineTo(X(P.arrEnd), Y(P.arrEnd));
-        ctx.quadraticCurveTo(X(pAdd(P.arrEnd, av, 0.45)), Y(pAdd(P.arrEnd, av, 0.45)), X(P.entryTurn), Y(P.entryTurn));
-        ctx.lineTo(X(pAdd(P.entryJoin, vec(arr.entryHdg), -0.3)), Y(pAdd(P.entryJoin, vec(arr.entryHdg), -0.3)));
-        ctx.quadraticCurveTo(X(P.entryJoin), Y(P.entryJoin), X(P.entryEnd), Y(P.entryEnd));
         ctx.stroke();
-        // proa de entrada
-        ctx.fillStyle = 'rgba(70,194,186,.75)';
-        ctx.font = '700 10px Inter, sans-serif';
-        ctx.textAlign = 'center';
-        const entryMid = pAdd(P.entryTurn, vec(arr.entryHdg), 0.45);
-        ctx.fillText(fmtHdg(arr.entryHdg), X(entryMid) + 16, Y(entryMid) - 6);
         ctx.setLineDash([]);
         // seta e rótulos da chegada
         ctx.save();
@@ -612,7 +596,7 @@
         ctx.fill();
         ctx.fillStyle = 'rgba(70,194,186,.9)';
         ctx.font = '700 10px Inter, sans-serif';
-        const idLbl = pAdd(pAdd(abeamId, ao, 0.05), av, -0.38);
+        const idLbl = pAdd(pAdd(abeamId, ao, 0.3), av, -0.55);
         ctx.fillText('ID — ' + (r.circuit.arrival.unitSide === 'dir' ? 'piloto dir.' : 'piloto esq.'), X(idLbl), Y(idLbl));
       } else {
         ctx.moveTo(X(pAdd(P.D, P.f, -0.35)), Y(pAdd(P.D, P.f, -0.35)));
