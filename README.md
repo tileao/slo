@@ -26,9 +26,10 @@ deslocados —, SLO) e do vento:
   pernas, GS estimada, distâncias de referência, 500 ft RADALT / 80 KIAS);
 - desenha a **final deslocada** para o ponto imaginário abeam o helideque,
   com LDP (deslocamento de 45° para o pouso) e escape reto em frente;
-- com a **proa de chegada na UM**, desenha o **sobrevoo de reconhecimento**
-  (UM pelo lado do PF — PF lê o código ICAO, PM coteja) e a curva de
-  entrada na perna do vento;
+- com a **proa de chegada na UM**, desenha o **sobrevoo de reconhecimento**:
+  passagem ao lado da unidade pelo bordo do helideque (melhor visual do
+  deck), identificação pelo piloto do lado da UM e, após a passagem, proa
+  perpendicular para interceptar a perna do vento a 90°;
 - define o **plano de arremetida** e exibe cartões de referência
   (aproximação estabilizada, comunicações e checklists);
 - desenha o **diagrama do circuito** (UM, SLO, vento e pernas) em canvas,

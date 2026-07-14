@@ -173,16 +173,25 @@
     const gsDw = gs(dwHdg);
     // través -> início da base (~1,31 NM ao longo da perna p/ dist GPS 1,65 NM)
     const minAfterAbeam = gsDw > 0 ? ((1.31 / gsDw) * 60).toFixed(1).replace('.', ',') : null;
-    // sobrevoo de reconhecimento: na proa de chegada da rota (quando informada),
-    // com a UM pelo lado do PF; depois, curva de entrada na perna do vento
+    // sobrevoo de reconhecimento: passa AO LADO da UM, pelo bordo do helideque
+    // (lado da bissetriz — melhor visual do deck); identifica o piloto do lado
+    // da UM; após a passagem, proa perpendicular p/ interceptar a perna do
+    // vento a 90° e ingressar no circuito
     const ovHdg = st.arrivalHdg != null ? norm(st.arrivalHdg) : finalHdg;
-    const arrival = st.arrivalHdg != null
-      ? { hdg: ovHdg, turn: angDiff(dwHdg, ovHdg) >= 0 ? 'direita' : 'esquerda' }
-      : null;
+    let arrival = null;
+    if (st.arrivalHdg != null){
+      // desloca a trilha p/ o lado do mar: perpendicular com componente na bissetriz
+      const toSea = Math.cos(rad(angDiff(norm(ovHdg + 90), st.sloBisector)));
+      const passBear = norm(ovHdg + (toSea >= 0 ? 90 : -90));
+      const unitSide = toSea >= 0 ? 'esq' : 'dir'; // UM fica do lado oposto ao mar
+      const entryHdg = norm(finalHdg + (side === 'esq' ? -90 : 90));
+      arrival = { hdg: ovHdg, passBear, unitSide, entryHdg };
+    }
     return {
       side, arrival,
       legs: [
-        { name: 'Sobrevoo (identificação)', hdg: ovHdg, gs: gs(ovHdg), ref: 'UM pelo lado do PF · PF lê o código ICAO / PM coteja' },
+        { name: 'Sobrevoo (identificação)', hdg: ovHdg, gs: gs(ovHdg),
+          ref: arrival ? `UM à ${arrival.unitSide === 'dir' ? 'direita' : 'esquerda'}, pelo bordo do helideque · ler ICAO / cotejar` : 'Passagem abeam · ler código ICAO' },
         { name: 'Perna do vento',           hdg: dwHdg,    gs: gsDw,        ref: '1,0 NM de través · até 1,5–1,8 NM GPS' + (minAfterAbeam ? ` (~${minAfterAbeam} min após o través)` : '') },
         { name: 'Base',                     hdg: baseHdg,  gs: gs(baseHdg), ref: 'Curva 90° · bank ≤ 20° · compensar deriva' },
         { name: 'Final',                    hdg: finalHdg, gs: gs(finalHdg), ref: 'Deslocada — abeam o deck · no LDP, 45° p/ o pouso, trajetória contida no SLO e cauda livre' }
@@ -299,7 +308,8 @@
     if (circuit){
       el.resCircuit.textContent = circuit.side === 'esq' ? 'Curvas à esquerda' : 'Curvas à direita';
       el.resCircuitSub.textContent = circuit.arrival
-        ? `PF no assento ${pf.side === 'esq' ? 'esquerdo' : 'direito'} — sobrevoo ${fmtHdg(circuit.arrival.hdg)} com a UM pelo lado do PF: PF identifica (lê o ICAO), PM coteja. Entrada no vento por curva à ${circuit.arrival.turn}.`
+        ? `PF no assento ${pf.side === 'esq' ? 'esquerdo' : 'direito'} — passagem ${fmtHdg(circuit.arrival.hdg)} deixando a UM à ${circuit.arrival.unitSide === 'dir' ? 'direita' : 'esquerda'} (bordo do helideque): identificação pelo piloto do assento ${circuit.arrival.unitSide === 'dir' ? 'direito' : 'esquerdo'}. Após a passagem, proa ${fmtHdg(circuit.arrival.entryHdg)} para interceptar a perna do vento a 90°.` +
+          (circuit.arrival.unitSide !== pf.side ? ' Avaliar troca PF/PM.' : '')
         : `PF no assento ${pf.side === 'esq' ? 'esquerdo' : 'direito'} — deck abeam pelo lado do PF; sentido da final escolhido pelo vento. Avaliar troca PF/PM após o sobrevoo.`;
       el.legsBody.innerHTML = circuit.legs.map(l =>
         `<tr><td>${l.name}</td><td class="hdg">${fmtHdg(l.hdg)}</td><td>${l.gs} kt</td><td class="dim">${l.ref}</td></tr>`).join('');
@@ -390,16 +400,23 @@
 
     // enquadramento (inclui posições dos rótulos para nada ficar cortado)
     // pontos do sobrevoo de reconhecimento (quando a proa de chegada é informada)
-    if (st.arrivalHdg != null){
-      const ah = norm(st.arrivalHdg);
-      const av = vec(ah);
-      const ao = vec(norm(ah + (side === 'dir' ? -90 : 90)));
+    if (st.arrivalHdg != null && r.circuit && r.circuit.arrival){
+      const arr = r.circuit.arrival;
+      const av = vec(arr.hdg);
+      const ao = vec(arr.passBear); // deslocamento p/ o bordo do helideque (mar)
+      const eo = vec(arr.entryHdg);
       P.arrAbeam = pAdd(P.D, ao, 0.3);
       P.arrStart = pAdd(P.arrAbeam, av, -2.0);
       P.arrEnd = pAdd(P.arrAbeam, av, 0.9);
+      // curva p/ a proa de entrada e interceptação da perna do vento a 90°
+      P.entryTurn = pAdd(pAdd(P.arrEnd, av, 0.45), eo, 0.45);
+      const s = 1.0 - ((P.entryTurn.e - P.D.e) * P.o.e + (P.entryTurn.n - P.D.n) * P.o.n);
+      P.entryJoin = pAdd(P.entryTurn, eo, Math.max(0.15, s));
+      P.entryEnd = pAdd(P.entryJoin, P.f, -0.4); // segue na perna do vento
     }
     const pts = [P.finalStart, P.abeam, P.ldp, P.escEnd, P.dwStart, P.dwTurn, P.c1, P.baseMid, P.c2, P.ovEnd, P.ovC, P.ovC2, P.D,
-                 ...(P.arrStart ? [P.arrStart, P.arrEnd, pAdd(P.arrStart, vec(norm(st.arrivalHdg)), -0.45)] : []),
+                 ...(P.arrStart ? [P.arrStart, P.arrEnd, P.entryTurn, P.entryJoin, P.entryEnd,
+                                   pAdd(P.arrStart, vec(norm(st.arrivalHdg)), -0.45)] : []),
                  pAdd(pAdd(P.D, P.o, 1.3), P.f, 0.4),
                  pAdd(pAdd(P.D, P.o, 0.5), P.f, -2.0),
                  pAdd(P.finalStart, P.f, -0.4),
@@ -556,23 +573,25 @@
       ctx.setLineDash([5, 6]);
       ctx.strokeStyle = 'rgba(70,194,186,.5)';
       ctx.beginPath();
-      if (st.arrivalHdg != null){
-        // chegada na proa da rota, deslocada p/ manter a UM do lado do PF
-        const ah = norm(st.arrivalHdg);
+      if (st.arrivalHdg != null && r.circuit.arrival){
+        // chegada pelo bordo do helideque; entrada perpendicular na perna do vento
+        const arr = r.circuit.arrival;
+        const ah = arr.hdg;
         const av = vec(ah);
-        const ao = vec(norm(ah + (side === 'dir' ? -90 : 90)));
+        const ao = vec(arr.passBear);
         const abeamId = P.arrAbeam; // través da UM — identificação
-        const arrStart = P.arrStart;
-        const arrEnd = P.arrEnd;
-        ctx.moveTo(X(arrStart), Y(arrStart));
-        ctx.lineTo(X(arrEnd), Y(arrEnd));
-        // entrada: intercepta a perna do vento no ponto natural (projeção)
-        const dwBase = pAdd(P.D, P.o, 1.0);
-        const relE = arrEnd.e - dwBase.e, relN = arrEnd.n - dwBase.n;
-        const k = Math.max(-0.9, Math.min(0.9, relE * P.f.e + relN * P.f.n));
-        const jp = pAdd(dwBase, P.f, k);
-        ctx.quadraticCurveTo(X(pAdd(arrEnd, av, 0.7)), Y(pAdd(arrEnd, av, 0.7)), X(jp), Y(jp));
+        ctx.moveTo(X(P.arrStart), Y(P.arrStart));
+        ctx.lineTo(X(P.arrEnd), Y(P.arrEnd));
+        ctx.quadraticCurveTo(X(pAdd(P.arrEnd, av, 0.45)), Y(pAdd(P.arrEnd, av, 0.45)), X(P.entryTurn), Y(P.entryTurn));
+        ctx.lineTo(X(pAdd(P.entryJoin, vec(arr.entryHdg), -0.3)), Y(pAdd(P.entryJoin, vec(arr.entryHdg), -0.3)));
+        ctx.quadraticCurveTo(X(P.entryJoin), Y(P.entryJoin), X(P.entryEnd), Y(P.entryEnd));
         ctx.stroke();
+        // proa de entrada
+        ctx.fillStyle = 'rgba(70,194,186,.75)';
+        ctx.font = '700 10px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        const entryMid = pAdd(P.entryTurn, vec(arr.entryHdg), 0.45);
+        ctx.fillText(fmtHdg(arr.entryHdg), X(entryMid) + 16, Y(entryMid) - 6);
         ctx.setLineDash([]);
         // seta e rótulos da chegada
         ctx.save();
@@ -586,14 +605,15 @@
         ctx.fillStyle = 'rgba(229,238,248,.85)';
         ctx.font = '700 11px Inter, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('Chegada ' + fmtHdg(ah), X(pAdd(arrStart, av, -0.22)), Y(pAdd(arrStart, av, -0.22)));
+        ctx.fillText('Chegada ' + fmtHdg(ah), X(pAdd(P.arrStart, av, -0.22)), Y(pAdd(P.arrStart, av, -0.22)));
         ctx.beginPath();
         ctx.arc(X(abeamId), Y(abeamId), 3.5, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(70,194,186,.9)';
         ctx.fill();
         ctx.fillStyle = 'rgba(70,194,186,.9)';
         ctx.font = '700 10px Inter, sans-serif';
-        ctx.fillText('ID — PF', X(pAdd(abeamId, ao, 0.3)), Y(pAdd(abeamId, ao, 0.3)));
+        const idLbl = pAdd(pAdd(abeamId, ao, 0.05), av, -0.38);
+        ctx.fillText('ID — ' + (r.circuit.arrival.unitSide === 'dir' ? 'piloto dir.' : 'piloto esq.'), X(idLbl), Y(idLbl));
       } else {
         ctx.moveTo(X(pAdd(P.D, P.f, -0.35)), Y(pAdd(P.D, P.f, -0.35)));
         ctx.lineTo(X(P.ovEnd), Y(P.ovEnd));
